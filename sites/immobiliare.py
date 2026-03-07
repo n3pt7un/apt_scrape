@@ -3,174 +3,29 @@ sites.immobiliare — Adapter for Immobiliare.it
 
 URL pattern: /{operation}-{property_type}/{city}/?prezzoMinimo=X&prezzoMassimo=Y&...
 Detail URL:  /annunci/{id}/
+Config:       sites/configs/immobiliare.yaml
 """
 
+from pathlib import Path
+from urllib.parse import urlencode, urljoin
+
+import re
+
 from .base import (
-    DetailSelectors,
+    ListingDetail,
     ListingSummary,
     SearchFilters,
     SearchSelectors,
-    SelectorGroup,
     SiteAdapter,
-    SiteConfig,
     Tag,
     classify_feature,
     extract_attr,
+    extract_post_date_text,
     extract_text,
+    load_config_from_yaml,
 )
 
-CONFIG = SiteConfig(
-    site_id="immobiliare",
-    display_name="Immobiliare.it",
-    base_url="https://www.immobiliare.it",
-    domain_pattern=r"immobiliare\.it",
-    # ---- URL structure ----
-    search_path_template="/{operation}-{property_type}/{city}/",
-    query_param_map={
-        "min_price": "prezzoMinimo",
-        "max_price": "prezzoMassimo",
-        "min_sqm": "superficieMinima",
-        "max_sqm": "superficieMassima",
-        "min_rooms": "localiMinimo",
-        "max_rooms": "localiMassimo",
-        "published_within": "giorniPubblicazione",
-        "sort": "ordine",
-    },
-    page_param="pag",
-    search_wait_selector="li.nd-list__item",
-    detail_wait_selector="h1",
-    # ---- property type mapping (normalized → immobiliare slug) ----
-    property_type_map={
-        "case": "case",
-        "appartamenti": "appartamenti",
-        "attici": "attici",
-        "case-indipendenti": "case-indipendenti",
-        "loft": "loft",
-        "rustici": "rustici",
-        "ville": "ville",
-        "villette": "villette",
-    },
-    operation_map={
-        "affitto": "affitto",
-        "vendita": "vendita",
-    },
-    # ---- search result selectors (fallback chains) ----
-    search_selectors=SearchSelectors(
-        listing_card=SelectorGroup([
-            "li.nd-list__item.ListItem_item__sugJm.ListItem_item__card__8WHcE",
-            "li.nd-list__item.ListItem_item__card__8WHcE",
-            "li.nd-list__item.in-realEstateResults__item",
-            "[class*='RealEstateResults'] li",
-            "div.in-realEstateResults__item",
-            "ul.in-realEstateResults li",
-        ]),
-        title=SelectorGroup([
-            "a.Title_title__kPgMu",
-            "a.in-card__title",
-            "a[class*='title']",
-            "a[href*='/annunci/']",
-        ]),
-        price=SelectorGroup([
-            "div.Price_price__kHY5L span",
-            "li.in-feat__item--main",
-            "div[class*='price']",
-            "[class*='Price']",
-        ]),
-        features=SelectorGroup([
-            "div.FeatureList_item__D3KYH",
-            "li.in-feat__item",
-            "span[class*='feature']",
-            "[class*='feat']",
-        ]),
-        address=SelectorGroup([
-            "span[class*='address']",
-            "[class*='Address']",
-            "p[class*='location']",
-        ]),
-        thumbnail=SelectorGroup([
-            "img[src*='pwm.im.it']",
-            "img[data-src*='pwm.im.it']",
-            "img",
-        ]),
-        description=SelectorGroup([
-            "p.in-card__description",
-            "[class*='description']",
-        ]),
-    ),
-    # ---- detail page selectors ----
-    detail_selectors=DetailSelectors(
-        title=SelectorGroup([
-            "h1.re-title__title",
-            "h1[class*='title']",
-            "h1",
-        ]),
-        price=SelectorGroup([
-            "div.re-overview__price",
-            "p[data-testid='listing-price-primary']",
-            "[class*='price']",
-            "[class*='Price']",
-        ]),
-        description=SelectorGroup([
-            "div.ReadAll_readAll__nryPL",
-            "div[class*='ReadAll_readAll']",
-            "div[id='description'] + *",
-            "div.in-readAll",
-            "div[class*='description']",
-            "div[class*='Description']",
-        ]),
-        features_keys=SelectorGroup([
-            "dl.FeaturesGrid_list__qtXl5 dt",
-            "dl[class*='FeaturesGrid'] dt",
-            "dt[class*='Item_title']",
-            "dl.re-features__list dt",
-            "div[class*='features'] dt",
-            "[class*='feature'] [class*='label']",
-        ]),
-        features_values=SelectorGroup([
-            "dl.FeaturesGrid_list__qtXl5 dd",
-            "dl[class*='FeaturesGrid'] dd",
-            "dd[class*='Item_description']",
-            "dl.re-features__list dd",
-            "div[class*='features'] dd",
-            "[class*='feature'] [class*='value']",
-        ]),
-        address=SelectorGroup([
-            "span.re-title__location",
-            "[class*='address']",
-            "[class*='Address']",
-            "span[class*='location']",
-        ]),
-        photos=SelectorGroup([
-            "button[aria-label*='foto'] img",
-            "div[class*='ListingPhotos'] img",
-            "img[src*='pwm.im.it']",
-            "img[data-src*='pwm.im.it']",
-            "[class*='gallery'] img",
-            "[class*='slider'] img",
-            "[class*='carousel'] img",
-        ]),
-        energy_class=SelectorGroup([
-            "[class*='energy']",
-            "[class*='Energy']",
-            "[class*='energetica']",
-        ]),
-        agency=SelectorGroup([
-            "[class*='agency']",
-            "[class*='Agency']",
-            "[class*='advertiser']",
-        ]),
-        costs_keys=SelectorGroup([
-            "div.SectionTitle_container__9bW_7 + dl dt",
-            "[class*='cost'] dt",
-            "[class*='costs'] dt",
-        ]),
-        costs_values=SelectorGroup([
-            "div.SectionTitle_container__9bW_7 + dl dd",
-            "[class*='cost'] dd",
-            "[class*='costs'] dd",
-        ]),
-    ),
-)
+_CONFIG_PATH = Path(__file__).parent / "configs" / "immobiliare.yaml"
 
 
 class ImmobiliareAdapter(SiteAdapter):
@@ -181,7 +36,7 @@ class ImmobiliareAdapter(SiteAdapter):
     """
 
     def __init__(self):
-        super().__init__(CONFIG)
+        super().__init__(load_config_from_yaml(_CONFIG_PATH))
 
     def build_search_url(self, filters: SearchFilters) -> str:
         """Build Immobiliare URL with site-specific sort handling.
@@ -189,8 +44,6 @@ class ImmobiliareAdapter(SiteAdapter):
         Immobiliare uses `criterio=data&ordine=desc` for newest listings,
         not `ordine=piu-recenti`.
         """
-        from urllib.parse import urlencode
-
         op = self.config.operation_map.get(filters.operation, filters.operation)
         pt = self.config.property_type_map.get(filters.property_type, filters.property_type)
 
@@ -249,7 +102,7 @@ class ImmobiliareAdapter(SiteAdapter):
         if not href:
             any_link = card.select_one("a[href]")
             href = extract_attr(any_link, "href")
-        if href and not href.startswith("http"):
+        if href and not href.startswith("http"):  # type: ignore[arg-type]
             href = urljoin(self.config.base_url, href)
 
         price = extract_text(sels.price.find(card))
@@ -303,4 +156,127 @@ class ImmobiliareAdapter(SiteAdapter):
             description_snippet=description,
             post_date=post_date,
             features_raw=feature_texts,
+        )
+
+    def parse_detail(self, html: str, url: str) -> ListingDetail:
+        """Immobiliare-specific detail page parser.
+
+        Improvements over the generic base implementation:
+        - address: joins all LocationInfo_location spans (street, neighbourhood, city)
+        - price: extracts only the primary price, ignoring crossed-out original
+        - size / floor: promoted to dedicated top-level fields
+        - photos: uses full-resolution URL (replaces /m-c.jpg with /r.jpg)
+        - costs: only the financial extras section (Spese condominio, Cauzione)
+        - metadata: all remaining key/value feature pairs
+        """
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "lxml")
+
+        # ── title ────────────────────────────────────────────────
+        title_el = (soup.select_one("h1[class*='Title_title']") or
+                    soup.select_one("h1[class*='title']") or
+                    soup.select_one("h1"))
+        title = extract_text(title_el)
+
+        # ── address: join all LocationInfo spans in DOM order ────
+        loc_spans = soup.select("span[class*='LocationInfo_location']")
+        if loc_spans:
+            # order is city → neighbourhood → street; reverse for human-readable
+            parts = [s.get_text(strip=True) for s in reversed(loc_spans) if s.get_text(strip=True)]
+            address = ", ".join(parts)
+        else:
+            address = extract_text(self.config.detail_selectors.address.find(soup))
+
+        # ── price: first direct <span> inside the price container ─
+        price = ""
+        price_container = (soup.select_one("div[class*='Price_price']") or
+                           soup.select_one("[class*='overview__price']"))
+        if price_container:
+            for child in price_container.children:
+                if getattr(child, 'name', None) == 'span':
+                    txt = child.get_text(strip=True)
+                    if txt:
+                        price = txt
+                        break
+        if not price:
+            price = extract_text(self.config.detail_selectors.price.find(soup))
+
+        # ── description ──────────────────────────────────────────
+        description = extract_text(self.config.detail_selectors.description.find(soup))
+
+        # ── main features dl (Caratteristiche) ───────────────────
+        # We want only the *first* dl — it holds the core property facts.
+        # Subsequent dls are surface-area breakdowns or price/cost sections.
+        metadata: dict[str, str] = {}
+        first_dl = soup.select_one("dl[class*='FeaturesGrid']") or soup.select_one("dl")
+        if first_dl:
+            dts = first_dl.select("dt")
+            dds = first_dl.select("dd")
+            for dt, dd in zip(dts, dds):
+                k = dt.get_text(strip=True)
+                v = dd.get_text(strip=True)
+                if k:
+                    metadata[k] = v
+
+        # ── size & floor: promoted from metadata ─────────────────
+        size_raw = metadata.get("Superficie", "")
+        # Strip commercial-area suffix: "56 m² | commerciale 56,6 m²" → "56 m²"
+        size = re.split(r"\s*\|", size_raw)[0].strip()
+        floor = metadata.get("Piano", "")
+
+        # ── photos: full-resolution ───────────────────────────────
+        photos: list[str] = []
+        for img in soup.select("[class*='ListingPhotos'] img"):
+            src = img.get("src") or img.get("data-src", "")
+            if src:
+                # swap medium-crop thumbnail for full-resolution variant
+                src = re.sub(r"/m-c\.jpg$", "/r.jpg", src)
+                src = re.sub(r"/s-c\.jpg$", "/r.jpg", src)
+                if src not in photos:
+                    photos.append(src)
+        # fallback to config-driven selector
+        if not photos:
+            for img in self.config.detail_selectors.photos.find_all(soup):
+                src = extract_attr(img, "data-src") or extract_attr(img, "src")
+                if src and src not in photos:
+                    photos.append(src)
+
+        # ── energy class ─────────────────────────────────────────
+        energy_class = extract_text(self.config.detail_selectors.energy_class.find(soup))
+
+        # ── agency ───────────────────────────────────────────────
+        agency = extract_text(self.config.detail_selectors.agency.find(soup))
+
+        # ── post date ────────────────────────────────────────────
+        post_date = extract_post_date_text(soup.get_text(" ", strip=True))
+
+        # ── costs: only the "Dettaglio dei costi" dl ─────────────
+        # Find the dl that follows a sibling/header containing "costi"
+        costs: dict[str, str] = {}
+        for dl in soup.select("dl"):
+            prev = dl.find_previous_sibling()
+            prev_txt = (prev.get_text(strip=True) if prev else "").lower()
+            if "costi" in prev_txt or "prezzo" in prev_txt:
+                for dt, dd in zip(dl.select("dt"), dl.select("dd")):
+                    k = dt.get_text(strip=True)
+                    v = dd.get_text(strip=True)
+                    if k:
+                        costs[k] = v
+
+        return ListingDetail(
+            source=self.config.display_name,
+            url=url,
+            title=title,
+            price=price,
+            description=description,
+            address=address,
+            size=size,
+            floor=floor,
+            metadata=metadata,
+            photos=photos[:20],
+            energy_class=energy_class,
+            agency=agency,
+            post_date=post_date,
+            costs=costs,
         )

@@ -1,0 +1,95 @@
+site_id: casa
+display_name: Casa.it
+base_url: https://www.casa.it
+domain_pattern: 'casa\.it'
+
+search_path_template: "/{operation}/residenziale/{city}/"
+query_param_map:
+  min_price: prezzo_min
+  max_price: prezzo_max
+  min_sqm: superficie_min
+  max_sqm: superficie_max
+  min_rooms: num_locali_min
+  max_rooms: num_locali_max
+page_param: page
+search_wait_selector: "article"
+detail_wait_selector: h1
+
+# Casa.it uses "residenziale" as a fixed category — all types map to it
+property_type_map:
+  case: residenziale
+  appartamenti: residenziale
+  attici: residenziale
+  ville: residenziale
+  villette: residenziale
+
+operation_map:
+  affitto: affitto
+  vendita: vendita
+
+search_selectors:
+  listing_card:
+    - "article[class*='listing']"
+    - "div[class*='listingCard']"
+    - "[data-testid*='listing']"
+    - "[class*='srp-listing']"
+  title:
+    - "a[class*='title']"
+    - "h2 a"
+    - "a[href*='/dettaglio/']"
+    - "a[href]"
+  price:
+    - "[class*='price']"
+    - "[class*='Price']"
+    - "span[class*='prezzo']"
+  features:
+    - "[class*='feature']"
+    - "[class*='spec']"
+    - "li[class*='info']"
+  address:
+    - "[class*='address']"
+    - "[class*='location']"
+    - "[class*='zona']"
+  thumbnail:
+    - "img[data-src]"
+    - "img[src]"
+    - "img"
+  description:
+    - "[class*='description']"
+    - "[class*='excerpt']"
+
+detail_selectors:
+  title:
+    - "h1[class*='title']"
+    - "h1"
+  price:
+    - "[class*='price']"
+    - "[class*='Price']"
+  description:
+    - "[class*='description']"
+    - "[class*='Description']"
+  features_keys:
+    - "[class*='feature'] dt"
+    - "dl dt"
+    - "[class*='detail'] [class*='label']"
+  features_values:
+    - "[class*='feature'] dd"
+    - "dl dd"
+    - "[class*='detail'] [class*='value']"
+  address:
+    - "[class*='address']"
+    - "[class*='location']"
+  photos:
+    - "[class*='gallery'] img"
+    - "[class*='carousel'] img"
+    - "img[class*='photo']"
+  energy_class:
+    - "[class*='energy']"
+    - "[class*='energetica']"
+  agency:
+    - "[class*='agency']"
+    - "[class*='advertiser']"
+  costs_keys:
+    - "[class*='cost'] dt"
+  costs_values:
+    - "[class*='cost'] dd"

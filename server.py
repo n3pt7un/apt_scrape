@@ -10,10 +10,17 @@ import csv
 import io
 import json
 import logging
+import os
+import re
+import socket
 import sys
 import time
 from enum import Enum
 from typing import Any, Optional
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -44,17 +51,72 @@ DEFAULT_MAX_PAGES = 1
 MAX_PAGES_LIMIT = 10
 
 # ---------------------------------------------------------------------------
+# Proxy helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_proxy_list() -> list[dict]:
+    """Build NordVPN SOCKS5 proxy entries from environment variables.
+
+    Required env vars (all three must be set for proxies to activate):
+        NORDVPN_USER    — NordVPN service username (nordvpn.com → Manual Setup → Credentials)
+        NORDVPN_PASS    — NordVPN service password
+        NORDVPN_SERVERS — Comma-separated hostnames, e.g. nl.socks.nordvpn.com,de.socks.nordvpn.com
+
+    Optional:
+        PROXY_ROTATE_EVERY — Proactive rotation threshold in requests (default: 15)
+    """
+    user = os.getenv("NORDVPN_USER", "").strip()
+    password = os.getenv("NORDVPN_PASS", "").strip()
+    servers_raw = os.getenv("NORDVPN_SERVERS", "").strip()
+    if not (user and password and servers_raw):
+        return []
+    servers = [s.strip() for s in servers_raw.split(",") if s.strip()]
+    return [
+        {"server": f"socks5://{s}:1080", "username": user, "password": password}
+        for s in servers
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Browser Manager (Camoufox)
 # ---------------------------------------------------------------------------
 
 
 class BrowserManager:
-    """Manages a Camoufox browser instance for stealth scraping."""
+    """Manages a Camoufox browser instance for stealth scraping.
+
+    When NORDVPN_USER / NORDVPN_PASS / NORDVPN_SERVERS env vars are set the
+    manager routes all traffic through NordVPN SOCKS5 proxies and rotates
+    them both proactively (every PROXY_ROTATE_EVERY requests) and reactively
+    (on DataDome / 403 block detection).  If those vars are absent the
+    behaviour is identical to the original implementation.
+    """
 
     def __init__(self):
         self._browser = None
         self._camoufox_ctx = None
         self._last_request_time = 0.0
+        # Proxy state
+        self._proxy_list: list[dict] = _build_proxy_list()
+        self._proxy_index: int = 0
+        self._context = None  # Playwright BrowserContext
+        self._requests_since_rotation: int = 0
+        self._rotate_every: int = int(os.getenv("PROXY_ROTATE_EVERY", "15"))
+        # Local relay: pproxy process + port it listens on
+        self._relay_proc = None
+        self._relay_port: int = 0
+        if self._proxy_list:
+            logger.info(
+                f"Proxy rotation enabled: {len(self._proxy_list)} server(s), "
+                f"proactive every {self._rotate_every} requests."
+            )
+        else:
+            logger.info("No proxy configured — running without proxy.")
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
     async def _ensure_browser(self):
         if self._browser is not None:
@@ -66,6 +128,98 @@ class BrowserManager:
         self._camoufox_ctx = AsyncCamoufox(headless=True)
         self._browser = await self._camoufox_ctx.__aenter__()
         logger.info("Camoufox browser started.")
+        await self._ensure_context()
+
+    @staticmethod
+    def _free_port() -> int:
+        with socket.socket() as s:
+            s.bind(("", 0))
+            return s.getsockname()[1]
+
+    async def _start_relay(self) -> None:
+        """Start (or restart) a local unauthenticated SOCKS5 relay via pproxy.
+
+        Playwright/Camoufox does not support SOCKS5 proxy authentication natively.
+        pproxy listens on localhost without auth and forwards to the NordVPN
+        endpoint with credentials, transparently.
+        """
+        # Tear down any existing relay
+        if self._relay_proc is not None:
+            self._relay_proc.terminate()
+            try:
+                await asyncio.wait_for(self._relay_proc.wait(), timeout=3)
+            except asyncio.TimeoutError:
+                self._relay_proc.kill()
+            self._relay_proc = None
+
+        entry = self._proxy_list[self._proxy_index]
+        # entry["server"] = "socks5://host:1080" — extract just the host
+        host = entry["server"].replace("socks5://", "").split(":")[0]
+        self._relay_port = self._free_port()
+        self._relay_proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "pproxy",
+            "-l", f"socks5://127.0.0.1:{self._relay_port}",
+            "-r", f"socks5://{host}:1080#{entry['username']}:{entry['password']}",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.sleep(0.8)  # let relay bind and become ready
+        logger.info(
+            f"SOCKS5 relay started: 127.0.0.1:{self._relay_port} → {host}:1080"
+        )
+
+    async def _ensure_context(self):
+        """Create (or recreate) a browser context, optionally via local relay."""
+        proxy_kwargs: dict = {}
+        if self._proxy_list:
+            await self._start_relay()
+            # Browser connects to local relay with NO auth (Playwright limitation)
+            proxy_kwargs["proxy"] = {"server": f"socks5://127.0.0.1:{self._relay_port}"}
+        self._context = await self._browser.new_context(**proxy_kwargs)
+
+    @staticmethod
+    def _detect_block(html: str) -> bool:
+        """Return True if the page looks like a bot-challenge / block page."""
+        if "captcha-delivery.com" in html:
+            return True
+        title_match = re.search(
+            r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL
+        )
+        if title_match:
+            title = title_match.group(1).lower()
+            if any(
+                w in title
+                for w in ("access denied", "robot check", "captcha", "blocked", "just a moment", "403")
+            ):
+                return True
+        # Very short HTML that still has an <html> tag = almost certainly a challenge page
+        if len(html) < 2000 and "<html" in html.lower():
+            return True
+        return False
+
+    async def rotate_proxy(self):
+        """Close the current context and reopen it with the next proxy in the list."""
+        if not self._proxy_list:
+            return
+        if self._context:
+            try:
+                await self._context.close()
+            except Exception:
+                pass
+            self._context = None
+        self._proxy_index = (self._proxy_index + 1) % len(self._proxy_list)
+        if self._proxy_index == 0:
+            logger.warning(
+                "All proxies cycled — pausing 60 s before restarting rotation."
+            )
+            await asyncio.sleep(60)
+        self._requests_since_rotation = 0
+        await self._ensure_context()
+        logger.info(f"Rotated to proxy: {self._proxy_list[self._proxy_index]['server']}")
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     async def _rate_limit(self):
         now = time.monotonic()
@@ -79,7 +233,30 @@ class BrowserManager:
         await self._ensure_browser()
         await self._rate_limit()
 
-        page = await self._browser.new_page()
+        # Proactive rotation
+        if self._proxy_list and self._requests_since_rotation >= self._rotate_every:
+            logger.info(
+                f"Proactive proxy rotation after {self._requests_since_rotation} requests."
+            )
+            await self.rotate_proxy()
+
+        html = await self._fetch_once(url, wait_selector)
+
+        # Reactive rotation: retry once on block detection
+        if self._proxy_list and self._detect_block(html):
+            logger.warning(f"Block detected on {url} — rotating proxy and retrying.")
+            await self.rotate_proxy()
+            html = await self._fetch_once(url, wait_selector)
+            if self._detect_block(html):
+                logger.error(f"Still blocked on {url} after proxy rotation.")
+                raise RuntimeError(f"Blocked on {url} even after proxy rotation.")
+
+        self._requests_since_rotation += 1
+        return html
+
+    async def _fetch_once(self, url: str, wait_selector: Optional[str]) -> str:
+        """Open a single page in the current context and return its HTML."""
+        page = await self._context.new_page()
         try:
             logger.info(f"Fetching: {url}")
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -101,6 +278,19 @@ class BrowserManager:
             await page.close()
 
     async def close(self):
+        if self._relay_proc is not None:
+            self._relay_proc.terminate()
+            try:
+                await asyncio.wait_for(self._relay_proc.wait(), timeout=3)
+            except asyncio.TimeoutError:
+                self._relay_proc.kill()
+            self._relay_proc = None
+        if self._context:
+            try:
+                await self._context.close()
+            except Exception:
+                pass
+            self._context = None
         if self._browser and self._camoufox_ctx:
             try:
                 await self._camoufox_ctx.__aexit__(None, None, None)
@@ -432,7 +622,7 @@ async def search_listings(params: SearchListingsInput) -> str:
                 # Convenience flattened fields for simpler downstream filtering.
                 listing["detail_description"] = detail.get("description", "")
                 listing["detail_address"] = detail.get("address", "")
-                listing["detail_features"] = detail.get("features", {})
+                listing["detail_features"] = detail.get("metadata", detail.get("features", {}))
                 listing["detail_costs"] = detail.get("costs", {})
                 listing["detail_energy_class"] = detail.get("energy_class", "")
                 listing["detail_agency"] = detail.get("agency", "")

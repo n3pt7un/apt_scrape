@@ -1,0 +1,128 @@
+site_id: immobiliare
+display_name: Immobiliare.it
+base_url: https://www.immobiliare.it
+domain_pattern: 'immobiliare\.it'
+
+search_path_template: "/{operation}-{property_type}/{city}/"
+query_param_map:
+  min_price: prezzoMinimo
+  max_price: prezzoMassimo
+  min_sqm: superficieMinima
+  max_sqm: superficieMassima
+  min_rooms: localiMinimo
+  max_rooms: localiMassimo
+  published_within: giorniPubblicazione
+  sort: ordine
+page_param: pag
+search_wait_selector: "li.nd-list__item"
+detail_wait_selector: h1
+
+property_type_map:
+  case: case
+  appartamenti: appartamenti
+  attici: attici
+  case-indipendenti: case-indipendenti
+  loft: loft
+  rustici: rustici
+  ville: ville
+  villette: villette
+
+operation_map:
+  affitto: affitto
+  vendita: vendita
+
+search_selectors:
+  listing_card:
+    - "li.nd-list__item.ListItem_item__sugJm.ListItem_item__card__8WHcE"
+    - "li.nd-list__item.ListItem_item__card__8WHcE"
+    - "li.nd-list__item.in-realEstateResults__item"
+    - "[class*='RealEstateResults'] li"
+    - "div.in-realEstateResults__item"
+    - "ul.in-realEstateResults li"
+  title:
+    - "a.Title_title__kPgMu"
+    - "a.in-card__title"
+    - "a[class*='title']"
+    - "a[href*='/annunci/']"
+  price:
+    - "div.Price_price__kHY5L span"
+    - "li.in-feat__item--main"
+    - "div[class*='price']"
+    - "[class*='Price']"
+  features:
+    - "div.FeatureList_item__D3KYH"
+    - "li.in-feat__item"
+    - "span[class*='feature']"
+    - "[class*='feat']"
+  address:
+    - "span[class*='address']"
+    - "[class*='Address']"
+    - "p[class*='location']"
+  thumbnail:
+    - "img[src*='pwm.im.it']"
+    - "img[data-src*='pwm.im.it']"
+    - "img"
+  description:
+    - "p.in-card__description"
+    - "[class*='description']"
+
+detail_selectors:
+  title:
+    - "h1.re-title__title"
+    - "h1[class*='title']"
+    - "h1"
+  price:
+    - "div.re-overview__price"
+    - "p[data-testid='listing-price-primary']"
+    - "[class*='price']"
+    - "[class*='Price']"
+  description:
+    - "div.ReadAll_readAll__nryPL"
+    - "div[class*='ReadAll_readAll']"
+    - "div[id='description'] + *"
+    - "div.in-readAll"
+    - "div[class*='description']"
+    - "div[class*='Description']"
+  features_keys:
+    - "dl.FeaturesGrid_list__qtXl5 dt"
+    - "dl[class*='FeaturesGrid'] dt"
+    - "dt[class*='Item_title']"
+    - "dl.re-features__list dt"
+    - "div[class*='features'] dt"
+    - "[class*='feature'] [class*='label']"
+  features_values:
+    - "dl.FeaturesGrid_list__qtXl5 dd"
+    - "dl[class*='FeaturesGrid'] dd"
+    - "dd[class*='Item_description']"
+    - "dl.re-features__list dd"
+    - "div[class*='features'] dd"
+    - "[class*='feature'] [class*='value']"
+  address:
+    - "span.re-title__location"
+    - "[class*='address']"
+    - "[class*='Address']"
+    - "span[class*='location']"
+  photos:
+    - "button[aria-label*='foto'] img"
+    - "div[class*='ListingPhotos'] img"
+    - "img[src*='pwm.im.it']"
+    - "img[data-src*='pwm.im.it']"
+    - "[class*='gallery'] img"
+    - "[class*='slider'] img"
+    - "[class*='carousel'] img"
+  energy_class:
+    - "[class*='energy']"
+    - "[class*='Energy']"
+    - "[class*='energetica']"
+  agency:
+    - "[class*='agency']"
+    - "[class*='Agency']"
+    - "[class*='advertiser']"
+  costs_keys:
+    - "div.SectionTitle_container__9bW_7 + dl dt"
+    - "[class*='cost'] dt"
+    - "[class*='costs'] dt"
+  costs_values:
+    - "div.SectionTitle_container__9bW_7 + dl dd"
+    - "[class*='cost'] dd"
+    - "[class*='costs'] dd"

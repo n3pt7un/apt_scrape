@@ -76,7 +76,9 @@ class ListingDetail:
     price: str = ""
     description: str = ""
     address: str = ""
-    features: dict[str, str] = field(default_factory=dict)
+    size: str = ""
+    floor: str = ""
+    metadata: dict[str, str] = field(default_factory=dict)
     photos: list[str] = field(default_factory=list)
     energy_class: str = ""
     agency: str = ""
@@ -250,6 +252,66 @@ def extract_post_date_text(text: str) -> str:
             return re.sub(r"\s+", " ", match.group(1) if match.groups() else match.group(0)).strip()
 
     return ""
+
+
+# ---------------------------------------------------------------------------
+# YAML config loader
+# ---------------------------------------------------------------------------
+
+
+def _sg(selectors: list[str]) -> SelectorGroup:
+    return SelectorGroup(selectors)
+
+
+def load_config_from_yaml(path: str) -> SiteConfig:
+    """Load a SiteConfig from a YAML file."""
+    import yaml
+    from pathlib import Path
+
+    with open(path, encoding="utf-8") as f:
+        d = yaml.safe_load(f)
+
+    def sg(key: dict) -> SelectorGroup:
+        return SelectorGroup(key if isinstance(key, list) else [key])
+
+    ss = d["search_selectors"]
+    ds = d["detail_selectors"]
+
+    return SiteConfig(
+        site_id=d["site_id"],
+        display_name=d["display_name"],
+        base_url=d["base_url"],
+        domain_pattern=d["domain_pattern"],
+        search_path_template=d["search_path_template"],
+        query_param_map=d.get("query_param_map", {}),
+        page_param=d.get("page_param", "page"),
+        search_wait_selector=d.get("search_wait_selector", "body"),
+        detail_wait_selector=d.get("detail_wait_selector", "h1"),
+        property_type_map=d.get("property_type_map", {}),
+        operation_map=d.get("operation_map", {}),
+        search_selectors=SearchSelectors(
+            listing_card=sg(ss["listing_card"]),
+            title=sg(ss["title"]),
+            price=sg(ss["price"]),
+            features=sg(ss["features"]),
+            address=sg(ss["address"]),
+            thumbnail=sg(ss["thumbnail"]),
+            description=sg(ss["description"]),
+        ),
+        detail_selectors=DetailSelectors(
+            title=sg(ds["title"]),
+            price=sg(ds["price"]),
+            description=sg(ds["description"]),
+            features_keys=sg(ds["features_keys"]),
+            features_values=sg(ds["features_values"]),
+            address=sg(ds["address"]),
+            photos=sg(ds["photos"]),
+            energy_class=sg(ds["energy_class"]),
+            agency=sg(ds["agency"]),
+            costs_keys=sg(ds["costs_keys"]),
+            costs_values=sg(ds["costs_values"]),
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -439,15 +501,15 @@ class SiteAdapter(ABC):
         description = extract_text(sels.description.find(soup))
         address = extract_text(sels.address.find(soup))
 
-        # Features (key-value pairs)
+        # Features / metadata (key-value pairs)
         keys_els = sels.features_keys.find_all(soup)
         vals_els = sels.features_values.find_all(soup)
-        features: dict[str, str] = {}
+        metadata: dict[str, str] = {}
         for k_el, v_el in zip(keys_els, vals_els):
             k = extract_text(k_el)
             v = extract_text(v_el)
             if k:
-                features[k] = v
+                metadata[k] = v
 
         # Photos
         photos: list[str] = []
@@ -479,7 +541,7 @@ class SiteAdapter(ABC):
             price=price,
             description=description,
             address=address,
-            features=features,
+            metadata=metadata,
             photos=photos[:20],
             energy_class=energy_class,
             agency=agency,

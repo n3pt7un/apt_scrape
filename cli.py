@@ -210,7 +210,7 @@ async def cmd_search(args):
                 listing["post_date"] = detail.get("post_date", "") or listing.get("post_date", "")
                 listing["detail_description"] = detail.get("description", "")
                 listing["detail_address"] = detail.get("address", "")
-                listing["detail_features"] = detail.get("features", {})
+                listing["detail_features"] = detail.get("metadata", detail.get("features", {}))
                 listing["detail_costs"] = detail.get("costs", {})
                 listing["detail_energy_class"] = detail.get("energy_class", "")
                 listing["detail_agency"] = detail.get("agency", "")
