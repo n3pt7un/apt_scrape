@@ -1,13 +1,17 @@
-"""
-rental_scraper_mcp — MCP server for scraping Italian real estate listings.
+"""apt_scrape.server — MCP server for scraping Italian real estate listings.
 
 Thin server layer: defines MCP tools and delegates to site adapters.
-Each site (Immobiliare.it, Casa.it, ...) is a self-contained plugin in sites/.
+Each site (Immobiliare.it, Casa.it, …) is a self-contained plugin in
+``apt_scrape/sites/``.
+
+Environment variables (all optional):
+    NORDVPN_USER: NordVPN service username.
+    NORDVPN_PASS: NordVPN service password.
+    NORDVPN_SERVERS: Comma-separated SOCKS5 hostnames.
+    PROXY_ROTATE_EVERY: Proactive rotation threshold in requests (default: 15).
 """
 
 import asyncio
-import csv
-import io
 import json
 import logging
 import os
@@ -15,8 +19,7 @@ import re
 import socket
 import sys
 import time
-from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -25,7 +28,9 @@ load_dotenv()
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from sites import (
+from apt_scrape.enrichment import enrich_post_dates, enrich_with_details
+from apt_scrape.export import listings_to_csv, listings_to_markdown_table
+from apt_scrape.sites import (
     SearchFilters,
     adapter_for_url,
     get_adapter,
@@ -34,14 +39,14 @@ from sites import (
 )
 
 # ---------------------------------------------------------------------------
-# Logging (stderr only — stdout is MCP stdio)
+# Logging (stderr only — stdout is the MCP stdio transport)
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     stream=sys.stderr,
 )
-logger = logging.getLogger("rental_scraper_mcp")
+logger = logging.getLogger("apt_scrape.server")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -49,6 +54,7 @@ logger = logging.getLogger("rental_scraper_mcp")
 REQUEST_DELAY_SECONDS = 2.0
 DEFAULT_MAX_PAGES = 1
 MAX_PAGES_LIMIT = 10
+
 
 # ---------------------------------------------------------------------------
 # Proxy helpers
@@ -58,13 +64,12 @@ MAX_PAGES_LIMIT = 10
 def _build_proxy_list() -> list[dict]:
     """Build NordVPN SOCKS5 proxy entries from environment variables.
 
-    Required env vars (all three must be set for proxies to activate):
-        NORDVPN_USER    — NordVPN service username (nordvpn.com → Manual Setup → Credentials)
-        NORDVPN_PASS    — NordVPN service password
-        NORDVPN_SERVERS — Comma-separated hostnames, e.g. nl.socks.nordvpn.com,de.socks.nordvpn.com
+    All three of ``NORDVPN_USER``, ``NORDVPN_PASS``, and ``NORDVPN_SERVERS``
+    must be set for proxy rotation to activate.
 
-    Optional:
-        PROXY_ROTATE_EVERY — Proactive rotation threshold in requests (default: 15)
+    Returns:
+        List of proxy dicts with ``server``, ``username``, and ``password``
+        keys. Empty list when proxy configuration is absent.
     """
     user = os.getenv("NORDVPN_USER", "").strip()
     password = os.getenv("NORDVPN_PASS", "").strip()
@@ -84,32 +89,36 @@ def _build_proxy_list() -> list[dict]:
 
 
 class BrowserManager:
-    """Manages a Camoufox browser instance for stealth scraping.
+    """Manage a Camoufox stealth browser instance for scraping.
 
-    When NORDVPN_USER / NORDVPN_PASS / NORDVPN_SERVERS env vars are set the
-    manager routes all traffic through NordVPN SOCKS5 proxies and rotates
-    them both proactively (every PROXY_ROTATE_EVERY requests) and reactively
-    (on DataDome / 403 block detection).  If those vars are absent the
-    behaviour is identical to the original implementation.
+    When ``NORDVPN_USER`` / ``NORDVPN_PASS`` / ``NORDVPN_SERVERS`` env vars
+    are set, all traffic is routed through NordVPN SOCKS5 proxies and rotated
+    both proactively (every ``PROXY_ROTATE_EVERY`` requests) and reactively
+    (on DataDome / 403 block detection). When those vars are absent the
+    browser runs without a proxy.
+
+    Attributes:
+        config: ``SiteConfig`` (inherited from constructor — not applicable
+            here; attribute belongs to ``SiteAdapter``).
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._browser = None
         self._camoufox_ctx = None
         self._last_request_time = 0.0
-        # Proxy state
         self._proxy_list: list[dict] = _build_proxy_list()
         self._proxy_index: int = 0
-        self._context = None  # Playwright BrowserContext
+        self._context = None
         self._requests_since_rotation: int = 0
         self._rotate_every: int = int(os.getenv("PROXY_ROTATE_EVERY", "15"))
-        # Local relay: pproxy process + port it listens on
         self._relay_proc = None
         self._relay_port: int = 0
+
         if self._proxy_list:
             logger.info(
-                f"Proxy rotation enabled: {len(self._proxy_list)} server(s), "
-                f"proactive every {self._rotate_every} requests."
+                "Proxy rotation enabled: %d server(s), proactive every %d requests.",
+                len(self._proxy_list),
+                self._rotate_every,
             )
         else:
             logger.info("No proxy configured — running without proxy.")
@@ -118,7 +127,8 @@ class BrowserManager:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _ensure_browser(self):
+    async def _ensure_browser(self) -> None:
+        """Start the Camoufox browser if not already running."""
         if self._browser is not None:
             return
 
@@ -132,6 +142,7 @@ class BrowserManager:
 
     @staticmethod
     def _free_port() -> int:
+        """Return an available local TCP port."""
         with socket.socket() as s:
             s.bind(("", 0))
             return s.getsockname()[1]
@@ -139,11 +150,10 @@ class BrowserManager:
     async def _start_relay(self) -> None:
         """Start (or restart) a local unauthenticated SOCKS5 relay via pproxy.
 
-        Playwright/Camoufox does not support SOCKS5 proxy authentication natively.
-        pproxy listens on localhost without auth and forwards to the NordVPN
-        endpoint with credentials, transparently.
+        Playwright/Camoufox does not support SOCKS5 proxy authentication
+        natively. pproxy listens on localhost without auth and forwards to the
+        NordVPN endpoint with credentials transparently.
         """
-        # Tear down any existing relay
         if self._relay_proc is not None:
             self._relay_proc.terminate()
             try:
@@ -153,33 +163,47 @@ class BrowserManager:
             self._relay_proc = None
 
         entry = self._proxy_list[self._proxy_index]
-        # entry["server"] = "socks5://host:1080" — extract just the host
         host = entry["server"].replace("socks5://", "").split(":")[0]
         self._relay_port = self._free_port()
         self._relay_proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "pproxy",
-            "-l", f"socks5://127.0.0.1:{self._relay_port}",
-            "-r", f"socks5://{host}:1080#{entry['username']}:{entry['password']}",
+            sys.executable,
+            "-m",
+            "pproxy",
+            "-l",
+            f"socks5://127.0.0.1:{self._relay_port}",
+            "-r",
+            f"socks5://{host}:1080#{entry['username']}:{entry['password']}",
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        await asyncio.sleep(0.8)  # let relay bind and become ready
+        await asyncio.sleep(0.8)
         logger.info(
-            f"SOCKS5 relay started: 127.0.0.1:{self._relay_port} → {host}:1080"
+            "SOCKS5 relay started: 127.0.0.1:%d -> %s:1080",
+            self._relay_port,
+            host,
         )
 
-    async def _ensure_context(self):
-        """Create (or recreate) a browser context, optionally via local relay."""
+    async def _ensure_context(self) -> None:
+        """Create (or recreate) a browser context, optionally via a local relay."""
         proxy_kwargs: dict = {}
         if self._proxy_list:
             await self._start_relay()
-            # Browser connects to local relay with NO auth (Playwright limitation)
-            proxy_kwargs["proxy"] = {"server": f"socks5://127.0.0.1:{self._relay_port}"}
+            proxy_kwargs["proxy"] = {
+                "server": f"socks5://127.0.0.1:{self._relay_port}"
+            }
         self._context = await self._browser.new_context(**proxy_kwargs)
 
     @staticmethod
     def _detect_block(html: str) -> bool:
-        """Return True if the page looks like a bot-challenge / block page."""
+        """Return ``True`` if the page looks like a bot-challenge or block page.
+
+        Args:
+            html: Raw HTML string to inspect.
+
+        Returns:
+            ``True`` when DataDome, an access-denied title, or an abnormally
+            short HTML response is detected.
+        """
         if "captcha-delivery.com" in html:
             return True
         title_match = re.search(
@@ -192,20 +216,26 @@ class BrowserManager:
                 for w in ("access denied", "robot check", "captcha", "blocked", "just a moment", "403")
             ):
                 return True
-        # Very short HTML that still has an <html> tag = almost certainly a challenge page
         if len(html) < 2000 and "<html" in html.lower():
             return True
         return False
 
-    async def rotate_proxy(self):
-        """Close the current context and reopen it with the next proxy in the list."""
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    async def rotate_proxy(self) -> None:
+        """Close the current context and reopen it with the next proxy.
+
+        Pauses for 60 seconds when the full proxy list has been cycled through.
+        """
         if not self._proxy_list:
             return
         if self._context:
             try:
                 await self._context.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Error closing context during rotation: %s", exc)
             self._context = None
         self._proxy_index = (self._proxy_index + 1) % len(self._proxy_list)
         if self._proxy_index == 0:
@@ -215,69 +245,95 @@ class BrowserManager:
             await asyncio.sleep(60)
         self._requests_since_rotation = 0
         await self._ensure_context()
-        logger.info(f"Rotated to proxy: {self._proxy_list[self._proxy_index]['server']}")
+        logger.info(
+            "Rotated to proxy: %s", self._proxy_list[self._proxy_index]["server"]
+        )
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    async def _rate_limit(self):
+    async def _rate_limit(self) -> None:
+        """Enforce the minimum delay between consecutive requests."""
         now = time.monotonic()
         elapsed = now - self._last_request_time
         if elapsed < REQUEST_DELAY_SECONDS:
             await asyncio.sleep(REQUEST_DELAY_SECONDS - elapsed)
         self._last_request_time = time.monotonic()
 
-    async def fetch_page(self, url: str, wait_selector: Optional[str] = None) -> str:
-        """Fetch a page via stealth browser and return raw HTML."""
+    async def fetch_page(self, url: str, wait_selector: str | None = None) -> str:
+        """Fetch *url* via the stealth browser and return raw HTML.
+
+        Handles proactive proxy rotation (every N requests) and reactive
+        rotation (on block detection).
+
+        Args:
+            url: Page URL to fetch.
+            wait_selector: Optional CSS selector to wait for after page load.
+
+        Returns:
+            Raw HTML string of the rendered page.
+
+        Raises:
+            RuntimeError: When the page is blocked even after proxy rotation.
+        """
         await self._ensure_browser()
         await self._rate_limit()
 
-        # Proactive rotation
         if self._proxy_list and self._requests_since_rotation >= self._rotate_every:
             logger.info(
-                f"Proactive proxy rotation after {self._requests_since_rotation} requests."
+                "Proactive proxy rotation after %d requests.",
+                self._requests_since_rotation,
             )
             await self.rotate_proxy()
 
         html = await self._fetch_once(url, wait_selector)
 
-        # Reactive rotation: retry once on block detection
         if self._proxy_list and self._detect_block(html):
-            logger.warning(f"Block detected on {url} — rotating proxy and retrying.")
+            logger.warning("Block detected on %s — rotating proxy and retrying.", url)
             await self.rotate_proxy()
             html = await self._fetch_once(url, wait_selector)
             if self._detect_block(html):
-                logger.error(f"Still blocked on {url} after proxy rotation.")
+                logger.error("Still blocked on %s after proxy rotation.", url)
                 raise RuntimeError(f"Blocked on {url} even after proxy rotation.")
 
         self._requests_since_rotation += 1
         return html
 
-    async def _fetch_once(self, url: str, wait_selector: Optional[str]) -> str:
-        """Open a single page in the current context and return its HTML."""
+    async def _fetch_once(self, url: str, wait_selector: str | None) -> str:
+        """Open *url* in a new page and return its rendered HTML.
+
+        Args:
+            url: URL to navigate to.
+            wait_selector: CSS selector to wait for before capturing content.
+
+        Returns:
+            Raw HTML string.
+
+        Raises:
+            Exception: Propagates any Playwright navigation error.
+        """
         page = await self._context.new_page()
         try:
-            logger.info(f"Fetching: {url}")
+            logger.info("Fetching: %s", url)
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
 
             if wait_selector:
                 try:
                     await page.wait_for_selector(wait_selector, timeout=10000)
-                except Exception:
+                except Exception as exc:
                     logger.warning(
-                        f"Selector '{wait_selector}' not found, using page as-is"
+                        "Selector '%s' not found, using page as-is: %s",
+                        wait_selector,
+                        exc,
                     )
 
             await asyncio.sleep(1.5)
             return await page.content()
-        except Exception as e:
-            logger.error(f"Error fetching {url}: {e}")
+        except Exception as exc:
+            logger.error("Error fetching %s: %s", url, exc)
             raise
         finally:
             await page.close()
 
-    async def close(self):
+    async def close(self) -> None:
+        """Shut down the relay process, browser context, and browser."""
         if self._relay_proc is not None:
             self._relay_proc.terminate()
             try:
@@ -288,18 +344,19 @@ class BrowserManager:
         if self._context:
             try:
                 await self._context.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Error closing browser context: %s", exc)
             self._context = None
         if self._browser and self._camoufox_ctx:
             try:
                 await self._camoufox_ctx.__aexit__(None, None, None)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Error closing Camoufox: %s", exc)
             self._browser = None
             logger.info("Browser closed.")
 
 
+# Module-level singleton used by both ``apt_scrape.cli`` and the MCP tools.
 browser = BrowserManager()
 
 
@@ -307,12 +364,11 @@ browser = BrowserManager()
 # Tool input models
 # ---------------------------------------------------------------------------
 
-# Build source choices dynamically from registered adapters
 _site_ids = list_adapters()
 
 
 class SearchListingsInput(BaseModel):
-    """Input for searching rental/sale listings."""
+    """Validated input for the ``rental_search_listings`` MCP tool."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
@@ -322,7 +378,7 @@ class SearchListingsInput(BaseModel):
         min_length=1,
         max_length=100,
     )
-    area: Optional[str] = Field(
+    area: str | None = Field(
         default=None,
         description="Optional area slug inside city (e.g. 'precotto', 'turro')",
         min_length=1,
@@ -339,25 +395,21 @@ class SearchListingsInput(BaseModel):
             "case-indipendenti, loft, rustici, ville, villette"
         ),
     )
-    min_price: Optional[int] = Field(
-        default=None, description="Minimum price in EUR", ge=0
-    )
-    max_price: Optional[int] = Field(
-        default=None, description="Maximum price in EUR", ge=0
-    )
-    min_sqm: Optional[int] = Field(
+    min_price: int | None = Field(default=None, description="Minimum price in EUR", ge=0)
+    max_price: int | None = Field(default=None, description="Maximum price in EUR", ge=0)
+    min_sqm: int | None = Field(
         default=None, description="Minimum surface in square meters", ge=0
     )
-    max_sqm: Optional[int] = Field(
+    max_sqm: int | None = Field(
         default=None, description="Maximum surface in square meters", ge=0
     )
-    min_rooms: Optional[int] = Field(
+    min_rooms: int | None = Field(
         default=None, description="Minimum number of rooms (locali)", ge=1, le=10
     )
-    max_rooms: Optional[int] = Field(
+    max_rooms: int | None = Field(
         default=None, description="Maximum number of rooms (locali)", ge=1, le=10
     )
-    published_within: Optional[str] = Field(
+    published_within: str | None = Field(
         default=None,
         description="Recency filter in days: '1' (today), '3', '7', '14', '30'",
         pattern=r"^(1|3|7|14|30)$",
@@ -382,7 +434,7 @@ class SearchListingsInput(BaseModel):
         ge=1,
         le=MAX_PAGES_LIMIT,
     )
-    end_page: Optional[int] = Field(
+    end_page: int | None = Field(
         default=None,
         description=(
             "Last result page to scrape (inclusive, 1-10). "
@@ -398,7 +450,7 @@ class SearchListingsInput(BaseModel):
             "fields (description, features, costs, etc.)"
         ),
     )
-    detail_limit: Optional[int] = Field(
+    detail_limit: int | None = Field(
         default=None,
         description=(
             "Maximum number of listing detail pages to fetch when "
@@ -424,11 +476,13 @@ class SearchListingsInput(BaseModel):
     @field_validator("city")
     @classmethod
     def normalize_city(cls, v: str) -> str:
+        """Normalize city to a lowercase hyphenated slug."""
         return v.lower().strip().replace(" ", "-")
 
     @field_validator("area")
     @classmethod
-    def normalize_area(cls, v: Optional[str]) -> Optional[str]:
+    def normalize_area(cls, v: str | None) -> str | None:
+        """Normalize area to a lowercase hyphenated slug."""
         if v is None:
             return None
         return v.lower().strip().replace(" ", "-")
@@ -436,6 +490,7 @@ class SearchListingsInput(BaseModel):
     @field_validator("source")
     @classmethod
     def validate_source(cls, v: str) -> str:
+        """Verify that *source* is a registered adapter ID."""
         available = list_adapters()
         if v not in available:
             raise ValueError(
@@ -445,7 +500,7 @@ class SearchListingsInput(BaseModel):
 
 
 class GetListingDetailInput(BaseModel):
-    """Input for fetching full details of a single listing."""
+    """Validated input for the ``rental_get_listing_detail`` MCP tool."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
@@ -458,18 +513,19 @@ class GetListingDetailInput(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_url(cls, v: str) -> str:
+        """Require *url* to start with ``http``."""
         if not v.startswith("http"):
             raise ValueError("URL must start with http:// or https://")
         return v
 
 
 class DumpPageInput(BaseModel):
-    """Input for dumping raw HTML of a page (for debugging selectors)."""
+    """Validated input for the ``rental_dump_page`` MCP tool."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     url: str = Field(..., description="URL to fetch and dump", min_length=10)
-    wait_selector: Optional[str] = Field(
+    wait_selector: str | None = Field(
         default=None,
         description="CSS selector to wait for before capturing HTML",
     )
@@ -495,20 +551,17 @@ mcp = FastMCP("rental_scraper_mcp")
 async def search_listings(params: SearchListingsInput) -> str:
     """Search for rental or sale property listings.
 
-    Builds a search URL with the provided filters, fetches result pages using
-    a stealth browser (Camoufox), and parses listing cards into structured JSON.
-
-    Supported sites (add more via sites/ plugins): immobiliare, casa.
+    Builds a search URL from *params*, fetches result pages via a stealth
+    browser (Camoufox), and parses listing cards into structured JSON.
 
     Args:
-        params (SearchListingsInput): Search filters including city, operation,
-            property_type, price range, sqm range, rooms, published_within,
-            source (site plugin id), and max_pages.
+        params: Validated search parameters.
 
     Returns:
-        str: JSON with 'count', 'source', 'search_url', 'listings' array.
-             Each listing: title, price, sqm, rooms, bathrooms, address, url,
-             thumbnail, description_snippet, features_raw, source.
+        JSON string with ``count``, ``source``, ``search_url``, and
+        ``listings`` array. Each listing contains title, price, sqm, rooms,
+        bathrooms, address, url, thumbnail, description_snippet,
+        raw_features, and source.
     """
     adapter = get_adapter(params.source)
     all_listings: list[dict[str, Any]] = []
@@ -525,8 +578,8 @@ async def search_listings(params: SearchListingsInput) -> str:
         return _json(
             {
                 "error": (
-                    f"Requested end_page={end_page} exceeds MAX_PAGES_LIMIT="
-                    f"{MAX_PAGES_LIMIT}"
+                    f"Requested end_page={end_page} exceeds "
+                    f"MAX_PAGES_LIMIT={MAX_PAGES_LIMIT}"
                 )
             }
         )
@@ -562,22 +615,19 @@ async def search_listings(params: SearchListingsInput) -> str:
             html = await browser.fetch_page(
                 url, wait_selector=adapter.config.search_wait_selector
             )
-        except Exception as e:
-            return _json(
-                {"error": f"Failed to fetch page {page_num}: {e}", "url": url}
-            )
+        except Exception as exc:
+            return _json({"error": f"Failed to fetch page {page_num}: {exc}", "url": url})
 
         page_listings = adapter.parse_search(html)
         pages_scraped = page_num
 
         if not page_listings:
-            logger.info(f"No more listings on page {page_num}, stopping.")
+            logger.info("No more listings on page %d, stopping.", page_num)
             break
 
         all_listings.extend([ls.to_dict() for ls in page_listings])
-        logger.info(f"Page {page_num}: {len(page_listings)} listings")
+        logger.info("Page %d: %d listings", page_num, len(page_listings))
 
-    # Reference URL for page 1
     ref = SearchFilters(
         city=params.city,
         area=params.area,
@@ -600,63 +650,12 @@ async def search_listings(params: SearchListingsInput) -> str:
     post_date_errors: list[dict[str, str]] = []
 
     if params.include_details and all_listings:
-        to_enrich = all_listings
-        if params.detail_limit is not None:
-            to_enrich = all_listings[: params.detail_limit]
+        detail_enriched, detail_errors = await enrich_with_details(
+            all_listings, browser, adapter, params.detail_limit
+        )
 
-        for listing in to_enrich:
-            listing_url = str(listing.get("url", "")).strip()
-            if not listing_url:
-                continue
-
-            listing_adapter = adapter_for_url(listing_url) or adapter
-            try:
-                detail_html = await browser.fetch_page(
-                    listing_url,
-                    wait_selector=listing_adapter.config.detail_wait_selector,
-                )
-                detail = listing_adapter.parse_detail(detail_html, listing_url).to_dict()
-                listing["detail"] = detail
-                listing["post_date"] = detail.get("post_date", "") or listing.get("post_date", "")
-
-                # Convenience flattened fields for simpler downstream filtering.
-                listing["detail_description"] = detail.get("description", "")
-                listing["detail_address"] = detail.get("address", "")
-                listing["detail_features"] = detail.get("metadata", detail.get("features", {}))
-                listing["detail_costs"] = detail.get("costs", {})
-                listing["detail_energy_class"] = detail.get("energy_class", "")
-                listing["detail_agency"] = detail.get("agency", "")
-                detail_enriched += 1
-            except Exception as e:
-                detail_errors.append({"url": listing_url, "error": str(e)})
-
-    # post_date is extracted by default for all searches.
-    for listing in all_listings:
-        if str(listing.get("post_date", "")).strip():
-            continue
-
-        listing_url = str(listing.get("url", "")).strip()
-        if not listing_url:
-            continue
-
-        listing_adapter = adapter_for_url(listing_url) or adapter
-        try:
-            detail_html = await browser.fetch_page(
-                listing_url,
-                wait_selector=listing_adapter.config.detail_wait_selector,
-            )
-            post_date = listing_adapter.extract_post_date_from_detail_html(detail_html)
-            listing["post_date"] = post_date
-            if post_date:
-                post_date_enriched += 1
-        except Exception as e:
-            post_date_errors.append({"url": listing_url, "error": str(e)})
-
-    csv_output = _listings_to_csv(all_listings) if params.include_csv else ""
-    table_output = (
-        _listings_to_markdown_table(all_listings, params.table_max_rows)
-        if params.include_table
-        else ""
+    post_date_enriched, post_date_errors = await enrich_post_dates(
+        all_listings, browser, adapter
     )
 
     return _json(
@@ -674,8 +673,10 @@ async def search_listings(params: SearchListingsInput) -> str:
             "detail_errors": detail_errors,
             "post_date_enriched": post_date_enriched,
             "post_date_errors": post_date_errors,
-            "csv": csv_output,
-            "table": table_output,
+            "csv": listings_to_csv(all_listings) if params.include_csv else "",
+            "table": listings_to_markdown_table(all_listings, params.table_max_rows)
+            if params.include_table
+            else "",
             "listings": all_listings,
         }
     )
@@ -694,15 +695,15 @@ async def search_listings(params: SearchListingsInput) -> str:
 async def get_listing_detail(params: GetListingDetailInput) -> str:
     """Fetch full details of a single property listing.
 
-    Auto-detects the site from the URL and uses the matching adapter.
-    Extracts: title, price, full description, features, photos, energy class,
+    Auto-detects the site from the URL and uses the matching adapter to
+    extract title, price, full description, features, photos, energy class,
     agency info, costs, and address.
 
     Args:
-        params (GetListingDetailInput): Contains url (str) — full listing URL.
+        params: Input containing the listing ``url``.
 
     Returns:
-        str: JSON with title, price, description, features, photos, etc.
+        JSON string of the ``ListingDetail`` dict.
     """
     url = params.url
     adapter = adapter_for_url(url)
@@ -717,8 +718,8 @@ async def get_listing_detail(params: GetListingDetailInput) -> str:
         html = await browser.fetch_page(
             url, wait_selector=adapter.config.detail_wait_selector
         )
-    except Exception as e:
-        return _json({"error": f"Failed to fetch listing: {e}", "url": url})
+    except Exception as exc:
+        return _json({"error": f"Failed to fetch listing: {exc}", "url": url})
 
     detail = adapter.parse_detail(html, url)
     return _json(detail.to_dict())
@@ -737,10 +738,8 @@ async def get_listing_detail(params: GetListingDetailInput) -> str:
 async def list_sites() -> str:
     """List all registered real estate site adapters.
 
-    Returns site IDs (for the 'source' parameter), display names, and base URLs.
-
     Returns:
-        str: JSON array of {site_id, display_name, base_url} objects.
+        JSON array of ``{site_id, display_name, base_url}`` objects.
     """
     return _json(list_adapter_details())
 
@@ -756,21 +755,20 @@ async def list_sites() -> str:
     },
 )
 async def dump_page(params: DumpPageInput) -> str:
-    """Fetch a page and return the raw HTML for debugging selectors.
+    """Fetch a page and return raw HTML for debugging selectors.
 
-    Use this to inspect a site's HTML structure when building or fixing
-    a site adapter. The HTML is captured after JS rendering via Camoufox.
+    Captures HTML after JavaScript rendering via Camoufox.
 
     Args:
-        params (DumpPageInput): url and optional wait_selector.
+        params: Input with ``url`` and optional ``wait_selector``.
 
     Returns:
-        str: Raw HTML string (not JSON).
+        Raw HTML string (not JSON).
     """
     try:
         return await browser.fetch_page(params.url, wait_selector=params.wait_selector)
-    except Exception as e:
-        return _json({"error": str(e), "url": params.url})
+    except Exception as exc:
+        return _json({"error": str(exc), "url": params.url})
 
 
 # ---------------------------------------------------------------------------
@@ -778,63 +776,8 @@ async def dump_page(params: DumpPageInput) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _escape_md(text: Any) -> str:
-    return str(text or "").replace("|", "\\|").replace("\n", " ").strip()
-
-
-def _listing_export_row(listing: dict[str, Any]) -> dict[str, str]:
-    return {
-        "title": str(listing.get("title", "")),
-        "price": str(listing.get("price", "")),
-        "post_date": str(listing.get("post_date", "")),
-        "sqm": str(listing.get("sqm", "")),
-        "rooms": str(listing.get("rooms", "")),
-        "bathrooms": str(listing.get("bathrooms", "")),
-        "address": str(listing.get("detail_address") or listing.get("address", "")),
-        "url": str(listing.get("url", "")),
-    }
-
-
-def _listings_to_csv(listings: list[dict[str, Any]]) -> str:
-    fieldnames = ["title", "price", "post_date", "sqm", "rooms", "bathrooms", "address", "url"]
-    output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=fieldnames)
-    writer.writeheader()
-    for listing in listings:
-        writer.writerow(_listing_export_row(listing))
-    return output.getvalue()
-
-
-def _listings_to_markdown_table(
-    listings: list[dict[str, Any]],
-    max_rows: int,
-) -> str:
-    rows = [_listing_export_row(ls) for ls in listings[:max_rows]]
-    header = "| title | price | post_date | sqm | rooms | address | url |"
-    sep = "|---|---|---|---|---|---|---|"
-    body = [
-        "| "
-        + " | ".join(
-            [
-                _escape_md(r["title"]),
-                _escape_md(r["price"]),
-                _escape_md(r["post_date"]),
-                _escape_md(r["sqm"]),
-                _escape_md(r["rooms"]),
-                _escape_md(r["address"]),
-                _escape_md(r["url"]),
-            ]
-        )
-        + " |"
-        for r in rows
-    ]
-    table = "\n".join([header, sep] + body)
-    if len(listings) > max_rows:
-        table += f"\n\nShown {max_rows} of {len(listings)} rows."
-    return table
-
-
 def _json(obj: Any) -> str:
+    """Serialize *obj* to a compact, human-readable JSON string."""
     return json.dumps(obj, indent=2, ensure_ascii=False)
 
 
@@ -845,7 +788,8 @@ def _json(obj: Any) -> str:
 if __name__ == "__main__":
     sites = list_adapter_details()
     logger.info(
-        f"Starting rental_scraper_mcp with {len(sites)} sites: "
-        + ", ".join(s["display_name"] for s in sites)
+        "Starting rental_scraper_mcp with %d site(s): %s",
+        len(sites),
+        ", ".join(s["display_name"] for s in sites),
     )
     mcp.run()

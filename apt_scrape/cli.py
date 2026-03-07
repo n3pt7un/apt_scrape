@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+"""apt_scrape.cli — Command-line interface for the rental scraper.
+
+Usage::
+
+    python -m apt_scrape.cli search --city milano --min-price 500 --max-price 1200
+    python -m apt_scrape.cli detail --url "https://www.immobiliare.it/annunci/123456/"
+    python -m apt_scrape.cli sites
+    python -m apt_scrape.cli dump --url "https://www.immobiliare.it/affitto-case/milano/" -o dump.html
+"""
+
+import asyncio
+import json
+from pathlib import Path
+
+import click
+
+from apt_scrape.enrichment import enrich_post_dates, enrich_with_details
+from apt_scrape.export import listings_to_csv, listings_to_markdown_table
+from apt_scrape.server import browser
+from apt_scrape.sites import (
+    SearchFilters,
+    adapter_for_url,
+    get_adapter,
+    list_adapter_details,
+    list_adapters,
+)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _normalize_slug(value: str) -> str:
+    """Return *value* lowercased with spaces replaced by hyphens."""
+    return value.lower().replace(" ", "-")
+
+
+def _parse_property_types(raw_value: str) -> list[str]:
+    """Split a comma-separated property-type string into individual slugs.
+
+    Args:
+        raw_value: Raw option value, e.g. ``"appartamenti,attici"``.
+
+    Returns:
+        Non-empty list of slug strings; defaults to ``["case"]``.
+    """
+    types = [part.strip() for part in str(raw_value or "").split(",")]
+    types = [t for t in types if t]
+    return types or ["case"]
+
+
+def _write_output(result: str, output: str | None) -> None:
+    """Write *result* to *output* file, or print to stdout."""
+    if output:
+        Path(output).write_text(result, encoding="utf-8")
+        click.echo(f"Saved to {output}", err=True)
+    else:
+        click.echo(result)
+
+
+# ---------------------------------------------------------------------------
+# CLI group
+# ---------------------------------------------------------------------------
+
+
+@click.group()
+def cli() -> None:
+    """Italian real estate listing scraper.
+
+    Scrapes Immobiliare.it, Casa.it, and other supported sites via a stealth
+    browser. All commands write JSON to stdout (or -o/--output) and progress
+    messages to stderr.
+    """
+
+
+# ---------------------------------------------------------------------------
+# search
+# ---------------------------------------------------------------------------
+
+
+@cli.command("search")
+@click.option("--city", required=True, help="City slug (e.g. milano, roma).")
+@click.option("--area", default=None, help="Sub-area slug inside city (e.g. precotto).")
+@click.option(
+    "--operation",
+    type=click.Choice(["affitto", "vendita"]),
+    default="affitto",
+    show_default=True,
+    help="Contract type.",
+)
+@click.option(
+    "--property-type",
+    default="case",
+    show_default=True,
+    help=(
+        "Property category slug. Comma-separate multiple values for OR logic "
+        "(e.g. appartamenti,attici)."
+    ),
+)
+@click.option("--min-price", type=int, default=None, help="Minimum price in EUR.")
+@click.option("--max-price", type=int, default=None, help="Maximum price in EUR.")
+@click.option("--min-sqm", type=int, default=None, help="Minimum surface area in m².")
+@click.option("--max-sqm", type=int, default=None, help="Maximum surface area in m².")
+@click.option("--min-rooms", type=int, default=None, help="Minimum number of rooms.")
+@click.option("--max-rooms", type=int, default=None, help="Maximum number of rooms.")
+@click.option(
+    "--published-within",
+    type=click.Choice(["1", "3", "7", "14", "30"]),
+    default=None,
+    help="Only show listings published within N days.",
+)
+@click.option(
+    "--sort",
+    default="rilevanza",
+    show_default=True,
+    help="Sort order (e.g. rilevanza, piu-recenti).",
+)
+@click.option(
+    "--source",
+    default=None,
+    help="Site adapter to use. Defaults to the first registered site.",
+)
+@click.option(
+    "--start-page",
+    type=int,
+    default=1,
+    show_default=True,
+    help="First result page to fetch (1-based).",
+)
+@click.option(
+    "--end-page",
+    type=int,
+    default=None,
+    help="Last result page to fetch (inclusive). Overrides --max-pages.",
+)
+@click.option(
+    "--max-pages",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Number of result pages to fetch.",
+)
+@click.option(
+    "--include-details",
+    is_flag=True,
+    help="Fetch each listing's detail page and enrich results.",
+)
+@click.option(
+    "--detail-limit",
+    type=int,
+    default=None,
+    help="Max number of detail pages to fetch (default: all).",
+)
+@click.option("--include-csv", is_flag=True, help="Embed CSV export in JSON output.")
+@click.option("--include-table", is_flag=True, help="Embed markdown table in JSON output.")
+@click.option(
+    "--table-max-rows",
+    type=int,
+    default=20,
+    show_default=True,
+    help="Row limit for the markdown table preview.",
+)
+@click.option("-o", "--output", default=None, type=click.Path(), help="Write output to file.")
+def search(
+    city: str,
+    area: str | None,
+    operation: str,
+    property_type: str,
+    min_price: int | None,
+    max_price: int | None,
+    min_sqm: int | None,
+    max_sqm: int | None,
+    min_rooms: int | None,
+    max_rooms: int | None,
+    published_within: str | None,
+    sort: str,
+    source: str | None,
+    start_page: int,
+    end_page: int | None,
+    max_pages: int,
+    include_details: bool,
+    detail_limit: int | None,
+    include_csv: bool,
+    include_table: bool,
+    table_max_rows: int,
+    output: str | None,
+) -> None:
+    """Search for property listings and output structured JSON."""
+    available_sites = list_adapters()
+    resolved_source = source or available_sites[0]
+    if resolved_source not in available_sites:
+        raise click.BadParameter(
+            f"'{resolved_source}' is not a registered site. "
+            f"Available: {', '.join(available_sites)}",
+            param_hint="--source",
+        )
+
+    result = asyncio.run(
+        _run_search(
+            city=city,
+            area=area,
+            operation=operation,
+            property_type=property_type,
+            min_price=min_price,
+            max_price=max_price,
+            min_sqm=min_sqm,
+            max_sqm=max_sqm,
+            min_rooms=min_rooms,
+            max_rooms=max_rooms,
+            published_within=published_within,
+            sort=sort,
+            source=resolved_source,
+            start_page=start_page,
+            end_page=end_page,
+            max_pages=max_pages,
+            include_details=include_details,
+            detail_limit=detail_limit,
+            include_csv=include_csv,
+            include_table=include_table,
+            table_max_rows=table_max_rows,
+        )
+    )
+    _write_output(result, output)
+
+
+async def _run_search(
+    city: str,
+    area: str | None,
+    operation: str,
+    property_type: str,
+    min_price: int | None,
+    max_price: int | None,
+    min_sqm: int | None,
+    max_sqm: int | None,
+    min_rooms: int | None,
+    max_rooms: int | None,
+    published_within: str | None,
+    sort: str,
+    source: str,
+    start_page: int,
+    end_page: int | None,
+    max_pages: int,
+    include_details: bool,
+    detail_limit: int | None,
+    include_csv: bool,
+    include_table: bool,
+    table_max_rows: int,
+) -> str:
+    """Async implementation of the search command."""
+    try:
+        adapter = get_adapter(source)
+        all_listings: list[dict] = []
+        search_urls: list[str] = []
+        property_types = _parse_property_types(property_type)
+
+        city_slug = _normalize_slug(city)
+        area_slug = _normalize_slug(area) if area else None
+
+        resolved_end = end_page if end_page is not None else start_page + max_pages - 1
+
+        if start_page < 1 or resolved_end < start_page:
+            raise click.UsageError(
+                "Invalid page range: start-page must be >= 1 and end-page >= start-page."
+            )
+
+        for pt in property_types:
+            for page_num in range(start_page, resolved_end + 1):
+                filters = SearchFilters(
+                    city=city_slug,
+                    area=area_slug,
+                    operation=operation,
+                    property_type=pt,
+                    min_price=min_price,
+                    max_price=max_price,
+                    min_sqm=min_sqm,
+                    max_sqm=max_sqm,
+                    min_rooms=min_rooms,
+                    max_rooms=max_rooms,
+                    published_within=published_within,
+                    sort=sort,
+                    page=page_num,
+                )
+                url = adapter.build_search_url(filters)
+                search_urls.append(url)
+                click.echo(f"Fetching {pt} page {page_num}: {url}", err=True)
+
+                html = await browser.fetch_page(
+                    url, wait_selector=adapter.config.search_wait_selector
+                )
+                page_listings = adapter.parse_search(html)
+
+                if not page_listings:
+                    click.echo(
+                        f"No {pt} listings on page {page_num}, stopping.", err=True
+                    )
+                    break
+
+                all_listings.extend([ls.to_dict() for ls in page_listings])
+                click.echo(f"  -> {len(page_listings)} {pt} listings", err=True)
+
+        # Deduplicate when multiple property types overlap.
+        seen_urls: set[str] = set()
+        deduped: list[dict] = []
+        for listing in all_listings:
+            listing_url = str(listing.get("url", "")).strip()
+            key = listing_url or json.dumps(listing, sort_keys=True, ensure_ascii=False)
+            if key not in seen_urls:
+                seen_urls.add(key)
+                deduped.append(listing)
+
+        ref = SearchFilters(
+            city=city_slug,
+            area=area_slug,
+            operation=operation,
+            property_type=property_types[0],
+            min_price=min_price,
+            max_price=max_price,
+            min_sqm=min_sqm,
+            max_sqm=max_sqm,
+            min_rooms=min_rooms,
+            max_rooms=max_rooms,
+            published_within=published_within,
+            sort=sort,
+            page=start_page,
+        )
+
+        detail_enriched = 0
+        detail_errors: list[dict] = []
+        post_date_enriched = 0
+        post_date_errors: list[dict] = []
+
+        if include_details and deduped:
+            detail_enriched, detail_errors = await enrich_with_details(
+                deduped, browser, adapter, detail_limit
+            )
+
+        post_date_enriched, post_date_errors = await enrich_post_dates(
+            deduped, browser, adapter
+        )
+
+        return json.dumps(
+            {
+                "count": len(deduped),
+                "source": adapter.config.display_name,
+                "search_url": adapter.build_search_url(ref),
+                "search_urls": search_urls,
+                "city": city_slug,
+                "area": area_slug,
+                "property_type": property_types if len(property_types) > 1 else property_types[0],
+                "start_page": start_page,
+                "end_page": resolved_end,
+                "details_requested": include_details,
+                "details_enriched": detail_enriched,
+                "detail_errors": detail_errors,
+                "post_date_enriched": post_date_enriched,
+                "post_date_errors": post_date_errors,
+                "csv": listings_to_csv(deduped) if include_csv else "",
+                "table": listings_to_markdown_table(deduped, table_max_rows)
+                if include_table
+                else "",
+                "listings": deduped,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    finally:
+        await browser.close()
+
+
+# ---------------------------------------------------------------------------
+# detail
+# ---------------------------------------------------------------------------
+
+
+@cli.command("detail")
+@click.option("--url", required=True, help="Full listing URL (auto-detects site).")
+@click.option("-o", "--output", default=None, type=click.Path(), help="Write output to file.")
+def detail(url: str, output: str | None) -> None:
+    """Fetch and display full details for a single listing URL."""
+    result = asyncio.run(_run_detail(url))
+    _write_output(result, output)
+
+
+async def _run_detail(url: str) -> str:
+    """Async implementation of the detail command."""
+    try:
+        adapter = adapter_for_url(url)
+        if adapter is None:
+            return json.dumps(
+                {"error": f"No adapter matches URL: {url}"}, indent=2, ensure_ascii=False
+            )
+
+        click.echo(f"Fetching: {url}", err=True)
+        html = await browser.fetch_page(url, wait_selector=adapter.config.detail_wait_selector)
+        return json.dumps(
+            adapter.parse_detail(html, url).to_dict(), indent=2, ensure_ascii=False
+        )
+    finally:
+        await browser.close()
+
+
+# ---------------------------------------------------------------------------
+# dump
+# ---------------------------------------------------------------------------
+
+
+@cli.command("dump")
+@click.option("--url", required=True, help="URL to fetch.")
+@click.option(
+    "--wait-selector",
+    default=None,
+    help="CSS selector to wait for before capturing HTML.",
+)
+@click.option("-o", "--output", default=None, type=click.Path(), help="Write output to file.")
+def dump(url: str, wait_selector: str | None, output: str | None) -> None:
+    """Dump raw rendered HTML for debugging selectors."""
+    result = asyncio.run(_run_dump(url, wait_selector))
+    _write_output(result, output)
+
+
+async def _run_dump(url: str, wait_selector: str | None) -> str:
+    """Async implementation of the dump command."""
+    try:
+        click.echo(f"Fetching: {url}", err=True)
+        return await browser.fetch_page(url, wait_selector=wait_selector)
+    finally:
+        await browser.close()
+
+
+# ---------------------------------------------------------------------------
+# sites
+# ---------------------------------------------------------------------------
+
+
+@cli.command("sites")
+def sites() -> None:
+    """List all registered site adapters."""
+    details = list_adapter_details()
+    header = f"{'ID':<16} {'Name':<20} {'Base URL'}"
+    click.echo(header)
+    click.echo("-" * len(header))
+    for d in details:
+        click.echo(f"{d['site_id']:<16} {d['display_name']:<20} {d['base_url']}")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    cli()
