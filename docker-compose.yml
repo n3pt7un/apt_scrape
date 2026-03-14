@@ -11,18 +11,16 @@ services:
       - PYTHONPATH=/workspace
       - DB_PATH=/data/app.db
       - PREFERENCES_FILE=/data/preferences.txt
-    ports:
-      - "8000:8000"
+    network_mode: host
     restart: unless-stopped
 
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    ports:
-      - "8501:8501"
     environment:
-      - BACKEND_URL=http://backend:8000
+      - BACKEND_URL=http://localhost:8000
     depends_on:
       - backend
+    network_mode: host
     restart: unless-stopped

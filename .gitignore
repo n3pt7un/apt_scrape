@@ -47,3 +47,5 @@ data/results/
 
 # Superpowers internal directory
 .superpowers/
+.pids/
+.logs/
