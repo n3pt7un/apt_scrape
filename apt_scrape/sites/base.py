@@ -33,6 +33,9 @@ __all__ = [
     "SiteConfig",
     "Tag",
     "classify_feature",
+    "config_from_dict",
+    "config_to_dict",
+    "deep_merge",
     "extract_attr",
     "extract_post_date_text",
     "extract_text",
@@ -415,8 +418,118 @@ def extract_post_date_text(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# YAML config loader
+# YAML config loader and config dict support
 # ---------------------------------------------------------------------------
+
+
+def _sg(value: list[str] | str) -> SelectorGroup:
+    """Build a SelectorGroup from a list or single string."""
+    return SelectorGroup(value if isinstance(value, list) else [value])
+
+
+def config_from_dict(d: dict[str, Any]) -> SiteConfig:
+    """Build a ``SiteConfig`` from a nested dict (same structure as YAML).
+
+    Args:
+        d: Config dict with keys like search_selectors, detail_selectors, etc.
+
+    Returns:
+        A fully populated ``SiteConfig`` instance.
+    """
+    ss = d["search_selectors"]
+    ds = d["detail_selectors"]
+    return SiteConfig(
+        site_id=d["site_id"],
+        display_name=d["display_name"],
+        base_url=d["base_url"],
+        domain_pattern=d["domain_pattern"],
+        search_path_template=d["search_path_template"],
+        query_param_map=d.get("query_param_map", {}),
+        page_param=d.get("page_param", "page"),
+        search_wait_selector=d.get("search_wait_selector", "body"),
+        detail_wait_selector=d.get("detail_wait_selector", "h1"),
+        property_type_map=d.get("property_type_map", {}),
+        operation_map=d.get("operation_map", {}),
+        search_selectors=SearchSelectors(
+            listing_card=_sg(ss["listing_card"]),
+            title=_sg(ss["title"]),
+            price=_sg(ss["price"]),
+            features=_sg(ss["features"]),
+            address=_sg(ss["address"]),
+            thumbnail=_sg(ss["thumbnail"]),
+            description=_sg(ss["description"]),
+        ),
+        detail_selectors=DetailSelectors(
+            title=_sg(ds["title"]),
+            price=_sg(ds["price"]),
+            description=_sg(ds["description"]),
+            features_keys=_sg(ds["features_keys"]),
+            features_values=_sg(ds["features_values"]),
+            address=_sg(ds["address"]),
+            photos=_sg(ds["photos"]),
+            energy_class=_sg(ds["energy_class"]),
+            agency=_sg(ds["agency"]),
+            costs_keys=_sg(ds["costs_keys"]),
+            costs_values=_sg(ds["costs_values"]),
+        ),
+    )
+
+
+def config_to_dict(config: SiteConfig) -> dict[str, Any]:
+    """Serialize a ``SiteConfig`` to a nested dict (selector groups as lists of strings)."""
+    def sg_to_list(sg: SelectorGroup) -> list[str]:
+        return list(sg.selectors)
+
+    ss = config.search_selectors
+    ds = config.detail_selectors
+    return {
+        "site_id": config.site_id,
+        "display_name": config.display_name,
+        "base_url": config.base_url,
+        "domain_pattern": config.domain_pattern,
+        "search_path_template": config.search_path_template,
+        "query_param_map": config.query_param_map,
+        "page_param": config.page_param,
+        "search_wait_selector": config.search_wait_selector,
+        "detail_wait_selector": config.detail_wait_selector,
+        "property_type_map": config.property_type_map,
+        "operation_map": config.operation_map,
+        "search_selectors": {
+            "listing_card": sg_to_list(ss.listing_card),
+            "title": sg_to_list(ss.title),
+            "price": sg_to_list(ss.price),
+            "features": sg_to_list(ss.features),
+            "address": sg_to_list(ss.address),
+            "thumbnail": sg_to_list(ss.thumbnail),
+            "description": sg_to_list(ss.description),
+        },
+        "detail_selectors": {
+            "title": sg_to_list(ds.title),
+            "price": sg_to_list(ds.price),
+            "description": sg_to_list(ds.description),
+            "features_keys": sg_to_list(ds.features_keys),
+            "features_values": sg_to_list(ds.features_values),
+            "address": sg_to_list(ds.address),
+            "photos": sg_to_list(ds.photos),
+            "energy_class": sg_to_list(ds.energy_class),
+            "agency": sg_to_list(ds.agency),
+            "costs_keys": sg_to_list(ds.costs_keys),
+            "costs_values": sg_to_list(ds.costs_values),
+        },
+    }
+
+
+def deep_merge(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge overrides into base. Overrides win; lists in overrides replace base lists."""
+    result = dict(base)
+    for k, v in overrides.items():
+        if k not in result:
+            result[k] = v
+        elif isinstance(v, dict) and isinstance(result.get(k), dict):
+            result[k] = deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
 
 
 def load_config_from_yaml(path: str) -> SiteConfig:
@@ -434,51 +547,9 @@ def load_config_from_yaml(path: str) -> SiteConfig:
         KeyError: If a required key is missing from the config dict.
     """
     import yaml
-
     with open(path, encoding="utf-8") as fh:
         d = yaml.safe_load(fh)
-
-    def sg(value: list[str] | str) -> SelectorGroup:
-        return SelectorGroup(value if isinstance(value, list) else [value])
-
-    ss = d["search_selectors"]
-    ds = d["detail_selectors"]
-
-    return SiteConfig(
-        site_id=d["site_id"],
-        display_name=d["display_name"],
-        base_url=d["base_url"],
-        domain_pattern=d["domain_pattern"],
-        search_path_template=d["search_path_template"],
-        query_param_map=d.get("query_param_map", {}),
-        page_param=d.get("page_param", "page"),
-        search_wait_selector=d.get("search_wait_selector", "body"),
-        detail_wait_selector=d.get("detail_wait_selector", "h1"),
-        property_type_map=d.get("property_type_map", {}),
-        operation_map=d.get("operation_map", {}),
-        search_selectors=SearchSelectors(
-            listing_card=sg(ss["listing_card"]),
-            title=sg(ss["title"]),
-            price=sg(ss["price"]),
-            features=sg(ss["features"]),
-            address=sg(ss["address"]),
-            thumbnail=sg(ss["thumbnail"]),
-            description=sg(ss["description"]),
-        ),
-        detail_selectors=DetailSelectors(
-            title=sg(ds["title"]),
-            price=sg(ds["price"]),
-            description=sg(ds["description"]),
-            features_keys=sg(ds["features_keys"]),
-            features_values=sg(ds["features_values"]),
-            address=sg(ds["address"]),
-            photos=sg(ds["photos"]),
-            energy_class=sg(ds["energy_class"]),
-            agency=sg(ds["agency"]),
-            costs_keys=sg(ds["costs_keys"]),
-            costs_values=sg(ds["costs_values"]),
-        ),
-    )
+    return config_from_dict(d)
 
 
 # ---------------------------------------------------------------------------
@@ -737,6 +808,21 @@ class SiteAdapter(ABC):
                 photos.append(src)
 
         energy_class = extract_text(sels.energy_class.find(soup))
+        # If the CSS selector matched a broad container (garbled text), fall back to
+        # the features dict — Immobiliare.it usually exposes "Classe energetica: G"
+        # as a <dt>/<dd> pair, which is already parsed into extra_info above.
+        if energy_class and not re.fullmatch(r'[A-Ga-g][1-4]?', energy_class.strip()):
+            _match = re.search(r'\b([A-Ga-g][1-4]?)\b', energy_class)
+            energy_class = _match.group(1).upper() if _match else ""
+        if not energy_class:
+            _ENERGY_KEYS = {"classe energetica", "efficienza energetica", "classe energia",
+                            "energy class", "classe energetica globale"}
+            for k, v in extra_info.items():
+                if k.lower().strip() in _ENERGY_KEYS or "energe" in k.lower():
+                    _m = re.search(r'\b([A-Ga-g][1-4]?)\b', v)
+                    if _m:
+                        energy_class = _m.group(1).upper()
+                        break
         agency = extract_text(sels.agency.find(soup))
         post_date = self.extract_post_date_from_detail_html(html)
 

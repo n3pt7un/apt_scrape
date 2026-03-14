@@ -2,7 +2,8 @@
 
 Creates pages in the Apartments DB with relational links to Areas and Agencies.
 Deduplicates by Listing URL. Adds new schema properties on first run via
-_ensure_schema().
+_ensure_schema(). Geocodes the address field via Nominatim to populate the
+Place property for map view.
 
 Required env vars:
     NOTION_API_KEY              — Notion integration token
@@ -19,6 +20,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import click
+import httpx
 from notion_client import AsyncClient
 
 
@@ -62,6 +64,52 @@ def _deslugify_area(slug: str) -> str:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _score_to_stars(score: int) -> str:
+    """Map a 0–100 integer score to a star-emoji string."""
+    if score < 20:
+        return "⭐"
+    if score < 40:
+        return "⭐⭐"
+    if score < 60:
+        return "⭐⭐⭐"
+    if score < 80:
+        return "⭐⭐⭐⭐"
+    return "⭐⭐⭐⭐⭐"
+
+
+_NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+_geocode_cache: dict[str, Optional[tuple[float, float]]] = {}
+
+
+async def _geocode_address(address: str) -> Optional[tuple[float, float]]:
+    """Return (lat, lon) for *address* using Nominatim, or None on failure.
+
+    Results are cached in-process to avoid duplicate requests within a run.
+    """
+    if not address:
+        return None
+    if address in _geocode_cache:
+        return _geocode_cache[address]
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                _NOMINATIM_URL,
+                params={"q": address, "format": "json", "limit": 1},
+                headers={"User-Agent": "apt_scrape/1.0 (apartment hunter)"},
+                timeout=10.0,
+            )
+            data = resp.json()
+            if data:
+                result: Optional[tuple[float, float]] = (float(data[0]["lat"]), float(data[0]["lon"]))
+            else:
+                result = None
+    except Exception as exc:
+        click.echo(f"  [warn] Geocoding failed for '{address}': {exc}", err=True)
+        result = None
+    _geocode_cache[address] = result
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -160,20 +208,36 @@ async def _is_duplicate(client: AsyncClient, apartments_db_id: str, listing_url:
 # ---------------------------------------------------------------------------
 
 
-def _build_properties(listing: dict, area_page_id: Optional[str], agency_page_id: Optional[str]) -> dict:
-    """Build the Notion page properties dict from a listing dict."""
+def _build_properties(
+    listing: dict,
+    area_page_id: Optional[str],
+    agency_page_id: Optional[str],
+    lat_lon: Optional[tuple[float, float]] = None,
+) -> dict:
+    """Build the Notion page properties dict from a listing dict.
+
+    Prefers structured values from ``listing["notion_fields"]`` (populated by
+    the LLM analysis step) and falls back to raw listing fields when absent.
+    """
+    fields: dict = listing.get("notion_fields") or {}
     detail = listing.get("detail") or {}
 
-    title = detail.get("title") or listing.get("title") or "Untitled"
-    price = _parse_price_numeric(listing.get("price", ""))
-    size_str = detail.get("size") or listing.get("sqm", "")
-    size = _parse_sqm_numeric(size_str)
-    floor_val = detail.get("floor", "")
-    address = listing.get("detail_address") or listing.get("address", "")
-    rooms = listing.get("rooms", "")
-    url = listing.get("url", "")
+    # Resolve each field: structured output first, then raw fallbacks
+    title = fields.get("title") or detail.get("title") or listing.get("title") or "Untitled"
+    price = fields.get("rent_per_month") or _parse_price_numeric(listing.get("price", ""))
+    size = fields.get("size_sqm") or _parse_sqm_numeric(detail.get("size") or listing.get("sqm", ""))
+    floor_val = fields.get("floor") or detail.get("floor", "")
+    address = fields.get("address") or listing.get("detail_address") or listing.get("address", "")
+    rooms = fields.get("rooms") or listing.get("rooms", "")
     source = listing.get("source", "")
-    energy = listing.get("detail_energy_class", "")
+    _raw_energy = fields.get("energy_class") or listing.get("detail_energy_class", "") or ""
+    # Only use the value if it looks like a valid energy class (A–G, optionally A1–A4)
+    _energy_match = re.search(r'\b([A-Ga-g][1-4]?)\b', _raw_energy)
+    energy = _energy_match.group(1).upper() if _energy_match else ""
+    furnished: Optional[bool] = fields.get("furnished")
+    available_from: Optional[str] = fields.get("available_from")
+    notes_extra: Optional[str] = fields.get("notes")
+    url = listing.get("url", "")
 
     props: dict = {
         "Apartment": {"title": [{"text": {"content": title}}]},
@@ -187,33 +251,39 @@ def _build_properties(listing: dict, area_page_id: Optional[str], agency_page_id
     if size is not None:
         props["Size (m²)"] = {"number": size}
     if rooms:
-        props["Rooms"] = {"rich_text": [{"text": {"content": rooms}}]}
+        props["Rooms"] = {"rich_text": [{"text": {"content": str(rooms)}}]}
     if floor_val:
-        props["Floor"] = {"rich_text": [{"text": {"content": floor_val}}]}
+        props["Floor"] = {"rich_text": [{"text": {"content": str(floor_val)}}]}
     if address:
         props["Address"] = {"rich_text": [{"text": {"content": address}}]}
     if source:
         props["Source"] = {"select": {"name": source}}
     if energy:
-        # Notion select options cannot contain commas and have length limits
-        safe_energy = energy.replace(",", " ").strip()[:100]
-        if safe_energy:
-            props["Energy Class"] = {"select": {"name": safe_energy}}
+        props["Energy Class"] = {"select": {"name": energy}}
+    if furnished is not None:
+        props["Furnished"] = {"checkbox": furnished}
+    if available_from and re.match(r"^\d{4}-\d{2}-\d{2}(T|$)", available_from):
+        props["Available From"] = {"date": {"start": available_from}}
+    if lat_lon:
+        props["Place"] = {"place": {"lat": lat_lon[0], "lon": lat_lon[1]}}
 
-    # AI analysis fields (only if present)
-    ai_stars = listing.get("ai_stars")
-    if ai_stars:
-        safe_stars = ai_stars.replace(",", " ").strip()[:100]
-        if safe_stars:
-            props["Score"] = {"select": {"name": safe_stars}}
-    ai_score = listing.get("ai_score")
+    # AI analysis fields
+    ai_score = fields.get("ai_score") if fields else listing.get("ai_score")
+    ai_verdict = fields.get("ai_verdict") if fields else listing.get("ai_verdict", "")
+    ai_reason = fields.get("ai_reason") if fields else listing.get("ai_reason", "")
     if ai_score is not None:
         props["AI Score"] = {"number": ai_score}
-    ai_verdict = listing.get("ai_verdict", "")
-    ai_reason = listing.get("ai_reason", "")
-    if ai_verdict or ai_reason:
-        notes = f"{ai_verdict}: {ai_reason}" if ai_verdict else ai_reason
-        props["Notes"] = {"rich_text": [{"text": {"content": notes[:2000]}}]}
+        stars = _score_to_stars(int(ai_score))
+        props["Score"] = {"select": {"name": stars}}
+    if ai_verdict or ai_reason or notes_extra:
+        parts = []
+        if ai_verdict and ai_reason:
+            parts.append(f"{ai_verdict}: {ai_reason}")
+        elif ai_verdict or ai_reason:
+            parts.append(ai_verdict or ai_reason)
+        if notes_extra:
+            parts.append(notes_extra)
+        props["Notes"] = {"rich_text": [{"text": {"content": "\n\n".join(parts)[:2000]}}]}
     if ai_reason:
         props["AI Reason"] = {"rich_text": [{"text": {"content": ai_reason[:2000]}}]}
 
@@ -229,6 +299,33 @@ def _build_properties(listing: dict, area_page_id: Optional[str], agency_page_id
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+async def mark_notion_duplicates(listings: list[dict]) -> int:
+    """Check Notion for duplicates and mark them in-place to avoid re-enrichment.
+    Returns the number of duplicates found.
+    """
+    api_key = os.environ.get("NOTION_API_KEY", "")
+    apartments_db_id = os.environ.get("NOTION_APARTMENTS_DB_ID", "")
+    if not api_key or not apartments_db_id or not listings:
+        return 0
+
+    skipped = 0
+    async with AsyncClient(auth=api_key) as client:
+        # Minimal check, not doing full schema or caching areas
+        for listing in listings:
+            if "notion_skipped" in listing:
+                continue
+            url = listing.get("url", "")
+            if not url:
+                continue
+            existing_id = await _is_duplicate(client, apartments_db_id, url)
+            if existing_id:
+                listing["notion_skipped"] = True
+                listing["notion_page_id"] = existing_id
+                listing["notion_page_url"] = f"https://www.notion.so/{existing_id.replace('-', '')}"
+                skipped += 1
+    return skipped
 
 
 async def push_listings(listings: list[dict]) -> None:
@@ -250,6 +347,10 @@ async def push_listings(listings: list[dict]) -> None:
 
         created = skipped = 0
         for listing in listings:
+            if listing.get("notion_skipped"):
+                skipped += 1
+                continue
+
             url = listing.get("url", "")
             existing_id = await _is_duplicate(client, apartments_db_id, url)
 
@@ -272,7 +373,16 @@ async def push_listings(listings: list[dict]) -> None:
                     client, agencies_db_id, agency_name, agency_cache
                 )
 
-            props = _build_properties(listing, area_page_id, agency_page_id)
+            # Geocode address for Place (map view)
+            fields: dict = listing.get("notion_fields") or {}
+            address_for_geocode = (
+                fields.get("address")
+                or listing.get("detail_address")
+                or listing.get("address", "")
+            )
+            lat_lon = await _geocode_address(address_for_geocode)
+
+            props = _build_properties(listing, area_page_id, agency_page_id, lat_lon)
             page = await client.pages.create(
                 parent={"database_id": apartments_db_id},
                 properties=props,

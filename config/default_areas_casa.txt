@@ -1,0 +1,11 @@
+# Default areas for casa (scrape_multiple_areas_casa.sh)
+# Keep in sync with AREAS in scrape_multiple_areas_casa.sh
+bicocca
+niguarda
+precotto
+citta-studi
+lambrate
+turro
+greco-segnano
+crescenzago
+centrale
