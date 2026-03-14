@@ -21,6 +21,21 @@ LISTING = {
     "detail_address": "Via Tal dei Tali 10, Bicocca, Milano",
     "detail_agency": "Agenzia Rossi",
     "detail_energy_class": "C",
+    "notion_fields": {
+        "title": "Bilocale luminoso con balcone",
+        "rent_per_month": 900.0,
+        "size_sqm": 55.0,
+        "rooms": "2 locali",
+        "floor": "3",
+        "address": "Via Tal dei Tali 10, Bicocca, Milano, MI",
+        "energy_class": "C",
+        "furnished": False,
+        "available_from": None,
+        "ai_score": 72,
+        "ai_verdict": "Good match",
+        "ai_reason": "Has balcony and good size.",
+        "notes": None,
+    },
     "ai_score": 72,
     "ai_stars": "⭐⭐⭐⭐",
     "ai_verdict": "Good match",
@@ -60,12 +75,58 @@ def test_deslugify_area():
     assert _deslugify_area("niguarda-ca-granda") == "Niguarda Ca Granda"
 
 
+def test_score_to_stars():
+    """_score_to_stars() maps 0–100 integers to emoji strings."""
+    from apt_scrape.notion_push import _score_to_stars
+
+    assert _score_to_stars(0) == "⭐"
+    assert _score_to_stars(39) == "⭐⭐"
+    assert _score_to_stars(40) == "⭐⭐⭐"
+    assert _score_to_stars(79) == "⭐⭐⭐⭐"
+    assert _score_to_stars(80) == "⭐⭐⭐⭐⭐"
+
+
+def test_build_properties_uses_notion_fields():
+    """_build_properties() prefers notion_fields values over raw listing fields."""
+    from apt_scrape.notion_push import _build_properties
+
+    props = _build_properties(LISTING, area_page_id=None, agency_page_id=None)
+    # title from notion_fields
+    assert props["Apartment"]["title"][0]["text"]["content"] == "Bilocale luminoso con balcone"
+    # numeric rent from notion_fields
+    assert props["Rent (€/mo)"]["number"] == 900.0
+    # energy class from notion_fields (single letter)
+    assert props["Energy Class"]["select"]["name"] == "C"
+    # furnished checkbox from notion_fields
+    assert props["Furnished"]["checkbox"] is False
+    # AI score and star rating
+    assert props["AI Score"]["number"] == 72
+    assert props["Score"]["select"]["name"] == "⭐⭐⭐⭐"
+
+
+def test_build_properties_sets_place_when_lat_lon_provided():
+    """_build_properties() writes Place property when lat_lon is given."""
+    from apt_scrape.notion_push import _build_properties
+
+    props = _build_properties(LISTING, None, None, lat_lon=(45.4654, 9.1859))
+    assert props["Place"] == {"place": {"lat": 45.4654, "lon": 9.1859}}
+
+
+def test_build_properties_no_place_without_lat_lon():
+    """_build_properties() omits Place when lat_lon is None."""
+    from apt_scrape.notion_push import _build_properties
+
+    props = _build_properties(LISTING, None, None, lat_lon=None)
+    assert "Place" not in props
+
+
 @pytest.mark.asyncio
 async def test_push_listings_creates_page_for_new_listing():
     """push_listings() creates a Notion page when listing URL is not already in DB."""
     from apt_scrape.notion_push import push_listings
 
-    with patch("apt_scrape.notion_push.AsyncClient") as MockClient:
+    with patch("apt_scrape.notion_push.AsyncClient") as MockClient, \
+         patch("apt_scrape.notion_push._geocode_address", new=AsyncMock(return_value=(45.4654, 9.1859))):
         client = AsyncMock()
         MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
         MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -90,6 +151,9 @@ async def test_push_listings_creates_page_for_new_listing():
     assert listings[0]["notion_page_id"] == "new-page-id"
     assert listings[0]["notion_skipped"] is False
     client.pages.create.assert_called_once()
+    # Verify Place was included in the page properties
+    call_kwargs = client.pages.create.call_args[1]
+    assert call_kwargs["properties"]["Place"] == {"place": {"lat": 45.4654, "lon": 9.1859}}
 
 
 @pytest.mark.asyncio
@@ -119,9 +183,19 @@ async def test_push_listings_skips_duplicate():
 @pytest.mark.asyncio
 async def test_push_listings_creates_agency_when_missing():
     """push_listings() creates a new Agency page when agency is not found."""
+    from unittest.mock import patch as _patch
+    import os
     from apt_scrape.notion_push import push_listings
 
-    with patch("apt_scrape.notion_push.AsyncClient") as MockClient:
+    env_overrides = {
+        "NOTION_API_KEY": "test-key",
+        "NOTION_APARTMENTS_DB_ID": "apt-db-id",
+        "NOTION_AREAS_DB_ID": "areas-db-id",
+        "NOTION_AGENCIES_DB_ID": "agencies-db-id",
+    }
+    with patch("apt_scrape.notion_push.AsyncClient") as MockClient, \
+         patch("apt_scrape.notion_push._geocode_address", new=AsyncMock(return_value=None)), \
+         _patch.dict(os.environ, env_overrides):
         client = AsyncMock()
         MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
         MockClient.return_value.__aexit__ = AsyncMock(return_value=False)

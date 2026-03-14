@@ -1,7 +1,14 @@
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl git && rm -rf /var/lib/apt/lists/*
+    build-essential curl git \
+    libgtk-3-0 libdbus-glib-1-2 libxt6t64 libx11-xcb1 \
+    libxcomposite1 libxcursor1 libxdamage1 libxfixes3 \
+    libxi6 libxrandr2 libxrender1 libxss1 libxtst6 \
+    libasound2t64 libpangocairo-1.0-0 libpango-1.0-0 \
+    libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libnss3 \
+    libgdk-pixbuf-2.0-0 fonts-liberation libgbm1 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
 

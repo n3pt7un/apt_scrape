@@ -27,12 +27,12 @@ AREAS=(
   # "niguarda"
   # "precotto"
   # "loreto"
-  # "citta-studi"
+  "citta-studi"
   # "lambrate"
-  "turro"
-  "greco-segnano"
+  # "turro"
+  # "greco-segnano"
   # "crescenzago"
-  # "centrale"
+  "centrale"
 #   "pasteur-rovereto"
 )
 

@@ -737,6 +737,21 @@ class SiteAdapter(ABC):
                 photos.append(src)
 
         energy_class = extract_text(sels.energy_class.find(soup))
+        # If the CSS selector matched a broad container (garbled text), fall back to
+        # the features dict — Immobiliare.it usually exposes "Classe energetica: G"
+        # as a <dt>/<dd> pair, which is already parsed into extra_info above.
+        if energy_class and not re.fullmatch(r'[A-Ga-g][1-4]?', energy_class.strip()):
+            _match = re.search(r'\b([A-Ga-g][1-4]?)\b', energy_class)
+            energy_class = _match.group(1).upper() if _match else ""
+        if not energy_class:
+            _ENERGY_KEYS = {"classe energetica", "efficienza energetica", "classe energia",
+                            "energy class", "classe energetica globale"}
+            for k, v in extra_info.items():
+                if k.lower().strip() in _ENERGY_KEYS or "energe" in k.lower():
+                    _m = re.search(r'\b([A-Ga-g][1-4]?)\b', v)
+                    if _m:
+                        energy_class = _m.group(1).upper()
+                        break
         agency = extract_text(sels.agency.find(soup))
         post_date = self.extract_post_date_from_detail_html(html)
 

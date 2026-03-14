@@ -58,10 +58,22 @@ def test_format_listing_context_includes_key_fields():
 
 @pytest.mark.asyncio
 async def test_analyse_listings_adds_ai_fields():
-    """analyse_listings() stamps ai_score, ai_stars, ai_verdict, ai_reason onto each listing."""
-    from apt_scrape.analysis import AnalysisResult, analyse_listings
+    """analyse_listings() stamps ai_score, ai_stars, ai_verdict, ai_reason and notion_fields onto each listing."""
+    from apt_scrape.analysis import NotionApartmentFields, analyse_listings
 
-    fake_result = AnalysisResult(score=72, verdict="Good match", reason="Has balcony and good size.")
+    fake_result = NotionApartmentFields(
+        title="Bilocale luminoso con balcone",
+        rent_per_month=900.0,
+        size_sqm=55.0,
+        rooms="2 locali",
+        floor="3",
+        address="Via Tal dei Tali 10, Bicocca, Milano, MI",
+        energy_class="C",
+        furnished=False,
+        ai_score=72,
+        ai_verdict="Good match",
+        ai_reason="Has balcony and good size.",
+    )
 
     # Patch the compiled LangGraph app invoke
     with patch("apt_scrape.analysis._get_graph") as mock_get_graph:
@@ -77,6 +89,11 @@ async def test_analyse_listings_adds_ai_fields():
         assert listing["ai_stars"] == "⭐⭐⭐⭐"
         assert listing["ai_verdict"] == "Good match"
         assert listing["ai_reason"] == "Has balcony and good size."
+        nf = listing["notion_fields"]
+        assert nf["title"] == "Bilocale luminoso con balcone"
+        assert nf["rent_per_month"] == 900.0
+        assert nf["energy_class"] == "C"
+        assert nf["furnished"] is False
 
 
 @pytest.mark.asyncio
