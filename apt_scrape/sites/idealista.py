@@ -53,8 +53,12 @@ class IdealistaAdapter(SiteAdapter):
         self.path_filter_map = raw_config.get("path_filter_map", {})
         self.room_filter_map = raw_config.get("room_filter_map", {})
         self.sort_map = raw_config.get("sort_map", {})
-        self.page_path_template = raw_config.get("page_path_template", "pagina-{page}.htm")
+        self.page_path_template = raw_config.get("page_path_template", "lista-{page}.htm")
         self.area_map = raw_config.get("area_map", {})
+        # city_no_area: slug to use for city-wide searches (no area specified).
+        # Idealista uses e.g. "milano-milano" for city-level URLs but plain "milano"
+        # when a neighbourhood path follows.
+        self.city_no_area = raw_config.get("city_no_area", None)
 
     def build_search_url(self, filters: SearchFilters) -> str:
         """Build an Idealista search URL with path-based filters.
@@ -74,13 +78,17 @@ class IdealistaAdapter(SiteAdapter):
         op = self.config.operation_map.get(filters.operation, filters.operation)
         pt = self.config.property_type_map.get(filters.property_type, filters.property_type)
 
-        # Build location path, mapping simple area slugs to Idealista's zone/neighborhood format
-        location = filters.city
+        # Build location path, mapping simple area slugs to Idealista's zone/neighborhood format.
+        # Idealista uses different city slugs depending on whether an area is included:
+        #   city-only:  /affitto-case/milano-milano/con-...  (city_no_area slug)
+        #   with area:  /affitto-case/milano/comasina-bicocca/bicocca-bignami/con-...
         if filters.area:
+            location = filters.city  # plain "milano" when area path follows
             area_clean = filters.area.strip("/")
-            # Look up the Idealista-specific path (e.g. "bicocca" → "bicocca-niguarda-precotto/bicocca")
             area_path = self.area_map.get(area_clean, area_clean)
             location = f"{location}/{area_path}"
+        else:
+            location = self.city_no_area or filters.city
 
         # Build base path
         path = self.config.search_path_template.format(

@@ -299,17 +299,40 @@ def _get_graph():
 # ---------------------------------------------------------------------------
 
 
-async def analyse_listings(listings: list[dict], preferences: str) -> None:
+def _model_cost_per_1m_tokens(model: str) -> float:
+    """Return approximate blended cost per 1M tokens for common OpenRouter models."""
+    _COSTS: dict[str, float] = {
+        "google/gemini-3.1-flash-lite-preview": 0.10,
+        "google/gemini-flash-1.5": 0.35,
+        "google/gemini-flash-1.5-8b": 0.175,
+        "openai/gpt-4o-mini": 0.30,
+        "openai/gpt-4o": 7.50,
+        "anthropic/claude-3-haiku": 0.50,
+        "anthropic/claude-3.5-sonnet": 9.00,
+        "meta-llama/llama-3.1-8b-instruct": 0.10,
+    }
+    for key, cost in _COSTS.items():
+        if key in model:
+            return cost
+    return 0.50  # conservative default
+
+
+async def analyse_listings(listings: list[dict], preferences: str) -> dict:
     """Score each listing in-place against *preferences*.
 
     Adds ai_score, ai_stars, ai_verdict, ai_reason to each listing dict.
     Runs with bounded concurrency (ANALYSIS_CONCURRENCY env var, default 5).
+
+    Returns {"tokens_used": int, "cost_usd": float} with usage estimates.
     """
     concurrency = int(os.environ.get("ANALYSIS_CONCURRENCY", "5"))
     semaphore = asyncio.Semaphore(concurrency)
     graph = _get_graph()
+    total_tokens = 0
+    token_lock = asyncio.Lock()
 
     async def _score_one(listing: dict) -> None:
+        nonlocal total_tokens
         async with semaphore:
             try:
                 output = await graph.ainvoke(
@@ -331,7 +354,15 @@ async def analyse_listings(listings: list[dict], preferences: str) -> None:
             listing["ai_verdict"] = result.ai_verdict
             listing["ai_reason"] = result.ai_reason
 
+            # Approximate token usage: ~800 input + ~200 output per listing
+            async with token_lock:
+                total_tokens += 1000
+
     total = len(listings)
     click.echo(f"Analysing {total} listings with AI...", err=True)
     await asyncio.gather(*(_score_one(l) for l in listings))
     click.echo(f"Analysis complete.", err=True)
+
+    model = os.environ.get("OPENROUTER_MODEL", "google/gemini-3.1-flash-lite-preview")
+    cost_usd = round((total_tokens / 1_000_000) * _model_cost_per_1m_tokens(model), 6)
+    return {"tokens_used": total_tokens, "cost_usd": cost_usd}

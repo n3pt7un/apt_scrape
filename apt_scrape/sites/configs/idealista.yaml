@@ -6,8 +6,14 @@ domain_pattern: 'idealista\.it'
 # Idealista uses path-based filters: /{operation}-{property_type}/{city}/{area}/con-{filters}/
 search_path_template: "/{operation}-{property_type}/{city}/"
 
+# City slug for city-wide searches (no area).
+# Idealista changed the city-level URL to use "milano-milano" while area-specific
+# searches still use plain "milano" followed by the neighbourhood path.
+#   city-only:  /affitto-case/milano-milano/con-...
+#   with area:  /affitto-case/milano/comasina-bicocca/bicocca-bignami/con-...
+city_no_area: milano-milano
+
 # Path-based filter mapping (used by custom build_search_url)
-# Pattern from working URL: prezzo_2700,prezzo-min_100,dimensione_40,dimensione-max_600
 path_filter_map:
   max_price: prezzo_{value}
   min_price: prezzo-min_{value}
@@ -21,7 +27,9 @@ room_filter_map:
   "4": quadrilocali-4
   "5": 5-locali-o-piu
 
-# Idealista sort options
+# Sort: maps internal sort values to the pubblicato_ path filter.
+# "newest" → add pubblicato_ultime-24-ore to the filter path.
+# The ordine query param (?ordine=pubblicazione-desc) is separate and handled by the adapter.
 sort_map:
   piu-recenti: ultime-24-ore
   recenti: ultime-24-ore
@@ -29,8 +37,7 @@ sort_map:
   newest: ultime-24-ore
 
 # Area slug mapping: simple name → Idealista zone/neighborhood path
-# The format is always {macro-zone}/{specific-neighborhood}
-# Verified: citta-studi (from example URL)
+# Format: {macro-zone}/{specific-neighborhood}  (all verified 2026-03-15)
 area_map:
   bicocca: comasina-bicocca/bicocca-bignami
   niguarda: comasina-bicocca/niguarda
@@ -43,9 +50,9 @@ area_map:
   crescenzago: greco-turro/crescenzago
   centrale: garibaldi-porta-venezia/centrale
 
-# Pagination via URL path
+# Pagination: changed from pagina-{page}.htm to lista-{page}.htm
 page_param: pagina
-page_path_template: "pagina-{page}.htm"
+page_path_template: "lista-{page}.htm"
 
 search_wait_selector: "article.item"
 detail_wait_selector: "h1"
@@ -65,11 +72,9 @@ search_selectors:
   listing_card:
     - "article.item"
     - "article[class*='item']"
-    - "div[class*='item-info']"
   title:
     - "a.item-link"
     - "a[class*='item-link']"
-    - "h2 a"
     - "a[href*='/immobile/']"
   price:
     - "span.item-price"
@@ -78,24 +83,22 @@ search_selectors:
   features:
     - "span.item-detail"
     - "[class*='item-detail']"
-    - "span[class*='feature']"
   address:
     - "span.item-link"
     - "[class*='item-link']"
-    - "[class*='address']"
   thumbnail:
-    - "img[data-ondemand-img]"
-    - "img[data-src]"
+    # Images now load directly into src (no longer data-ondemand-img / data-src)
+    - "img[src*='img4.idealista']"
+    - "img[src*='idealista.it']"
     - "picture img"
     - "img"
   description:
     - "div.item-description"
+    - "[class*='item-description']"
     - "[class*='description']"
 
 detail_selectors:
   title:
-    - "h1.main-info__title"
-    - "h1[class*='main-info']"
     - "h1"
   price:
     - "span.info-data-price"
@@ -106,29 +109,30 @@ detail_selectors:
     - "[class*='comment']"
     - "[class*='description']"
   features_keys:
-    - "ul.details-property_features li"
-    - "[class*='details-property'] dt"
-    - "dl dt"
+    # Features are in a plain <ul> (no class). Use info-features for summary (sqm/rooms/floor).
+    # The full features UL has no distinguishing class; match via content-rich sibling lists.
+    - "[class*='info-features']"
+    - "ul li"
   features_values:
-    - "ul.details-property_features li"
-    - "[class*='details-property'] dd"
-    - "dl dd"
+    - "[class*='info-features']"
+    - "ul li"
   address:
     - "span.main-info__title-minor"
     - "[class*='main-info__title-minor']"
-    - "[class*='address']"
   photos:
-    - "div.detail-multimedia-gallery img"
-    - "[class*='multimedia-gallery'] img"
+    - "img[src*='img4.idealista']"
+    - "img[src*='idealista.it/blur/WEB_DETAIL']"
+    - "[class*='gallery'] img"
     - "picture img"
-    - "img[data-ondemand-img]"
   energy_class:
-    - "span.energy-certificate"
+    # Energy class is encoded in the CSS class name: e.g. "icon-energy-c-8" → class C
+    - "[class*='icon-energy-']"
+    - "[class*='energy-certificate']"
     - "[class*='energy']"
   agency:
     - "div.advertiser-name"
+    - "[class*='advertiser-name']"
     - "[class*='advertiser']"
-    - "[class*='agency']"
   costs_keys:
     - "div.details-property_costs dt"
     - "[class*='costs'] dt"
