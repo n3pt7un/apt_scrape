@@ -7,7 +7,16 @@ from typing import Optional
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 DB_PATH = os.getenv("DB_PATH", "data/app.db")
-engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+
+if DB_PATH == ":memory:":
+    from sqlalchemy.pool import StaticPool
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+else:
+    engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
 
 
 class SearchConfig(SQLModel, table=True):
