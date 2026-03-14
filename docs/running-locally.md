@@ -75,16 +75,31 @@ If you see a browser 404 for `Search_Configs/_stcore/host-config`:
 
 Opening a page URL directly can trigger that 404; starting from the home page avoids it.
 
-## Checking logs
+## apt CLI
 
-From the repo root you can tail backend or frontend logs:
+The `apt` script manages backend and frontend processes from the repo root.
 
 ```bash
-./apt logs backend
-./apt logs frontend
+./apt <command> [service]
 ```
 
-Use this to debug API errors, startup issues, or Streamlit output.
+| Command | Description |
+|---------|-------------|
+| `apt start` | Start backend and frontend |
+| `apt start backend` | Start backend only |
+| `apt start frontend` | Start frontend only |
+| `apt stop` | Stop all services |
+| `apt stop backend` | Stop backend only |
+| `apt status` | Show running PIDs and health URLs |
+| `apt restart` | Restart all services |
+| `apt restart frontend` | Restart frontend only |
+| `apt logs backend` | Show last 50 lines of backend log |
+| `apt logs frontend -f` | Follow frontend log output (like `tail -f`) |
+| `apt logs backend -n 200` | Show last 200 lines |
+
+`apt logs` flags: `-n N` / `--lines N` — number of lines to show (default: 50); `-f` / `--follow` — stream output continuously.
+
+Logs are written to `.logs/backend.log` and `.logs/frontend.log`.
 
 ## If the backend won’t start
 
@@ -93,3 +108,44 @@ Use this to debug API errors, startup issues, or Streamlit output.
 - **"No module named 'backend'"** — Run from repo root with:  
   `PYTHONPATH=.` (or use `./scripts/run_backend.sh`).
 - **DB or preferences errors** — Set `DB_PATH` and `PREFERENCES_FILE` to writable paths (e.g. `data/app.db` and `data/preferences.txt`) and ensure `data/` exists.
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and fill in values. All are optional unless marked required.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DB_PATH` | no | `data/app.db` | SQLite database path |
+| `PREFERENCES_FILE` | no | `preferences.txt` (repo root) | Used for AI scoring. `apt` CLI defaults to repo root; shell scripts default to `data/preferences.txt` |
+| `BACKEND_URL` | no | `http://127.0.0.1:8000` | URL the frontend uses to reach the backend |
+| `OPENROUTER_API_KEY` | for AI scoring | — | OpenRouter API key |
+| `OPENROUTER_MODEL` | no | `google/gemini-2.0-flash-lite` (`.env.example`); code fallback: `google/gemini-3.1-flash-lite-preview` | Model slug passed to OpenRouter |
+| `ANALYSIS_CONCURRENCY` | no | `5` | Max parallel AI scoring calls |
+| `NOTION_API_KEY` | for Notion push | — | Notion integration token |
+| `NOTION_APARTMENTS_DB_ID` | for Notion push | — | Notion database ID for apartment listings |
+| `NOTION_AREAS_DB_ID` | for Notion push | — | Notion database ID for areas |
+| `NOTION_AGENCIES_DB_ID` | for Notion push | — | Notion database ID for agencies |
+| `NORDVPN_USER` | for proxy rotation | — | NordVPN service username (see `.env.example` for how to get this) |
+| `NORDVPN_PASS` | for proxy rotation | — | NordVPN service password |
+| `NORDVPN_SERVERS` | for proxy rotation | — | Comma-separated SOCKS5 hostnames |
+| `PROXY_ROTATE_EVERY` | no | `15` | Requests before rotating proxy |
+
+## AI Scoring Setup
+
+1. Set `OPENROUTER_API_KEY` in `.env`
+2. Optionally set `OPENROUTER_MODEL` (default: `google/gemini-2.0-flash-lite`)
+3. Edit `preferences.txt` in the repo root — plain text, one preference per line, e.g.:
+   ```
+   I want at least 2 bedrooms
+   Prefer quiet streets, not main roads
+   Max 1000 EUR/month including utilities
+   Close to a metro stop
+   ```
+4. In the dashboard, enable AI scoring per Search Config — scores appear in the Listings page (0–100)
+
+## Notion Integration
+
+1. Create a Notion integration at [notion.so/my-integrations](https://www.notion.so/my-integrations) and copy the token to `NOTION_API_KEY`
+2. Create three Notion databases (or duplicate the template) and share each with your integration
+3. Copy each database ID to `NOTION_APARTMENTS_DB_ID`, `NOTION_AREAS_DB_ID`, `NOTION_AGENCIES_DB_ID`
+4. Enable "Push to Notion" per Search Config in the dashboard — duplicate detection runs automatically on each push
