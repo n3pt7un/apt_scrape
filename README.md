@@ -135,7 +135,7 @@ Logs are written to `.logs/backend.log` and `.logs/frontend.log` in the repo roo
 ### Search
 
 ```bash
-python cli.py search \
+python -m apt_scrape.cli search \
   --city milano \
   --area niguarda \
   --operation affitto \
@@ -169,7 +169,7 @@ python cli.py search \
 ### Get a single listing
 
 ```bash
-python cli.py detail --url "https://www.immobiliare.it/annunci/123456/"
+python -m apt_scrape.cli detail --url "https://www.immobiliare.it/annunci/123456/"
 ```
 
 Auto-detects the site from the URL. Returns full JSON with all available fields.
@@ -177,7 +177,7 @@ Auto-detects the site from the URL. Returns full JSON with all available fields.
 ### Dump raw HTML
 
 ```bash
-python cli.py dump --url "https://www.immobiliare.it/affitto-case/milano/" -o debug.html
+python -m apt_scrape.cli dump --url "https://www.immobiliare.it/affitto-case/milano/" -o debug.html
 ```
 
 Useful for inspecting HTML when adjusting CSS selectors.
@@ -185,7 +185,7 @@ Useful for inspecting HTML when adjusting CSS selectors.
 ### List registered sites
 
 ```bash
-python cli.py sites
+python -m apt_scrape.cli sites
 ```
 
 ---
@@ -195,7 +195,7 @@ python cli.py sites
 Start the server for use with Claude Desktop or any MCP client:
 
 ```bash
-python server.py
+python -m apt_scrape.server
 ```
 
 Copy `mcp_config_example.json`, update `cwd` to your local path, and add it to your Claude Desktop config:
@@ -284,8 +284,8 @@ tail -f results/latest/batch/scrape_log_*.txt  # monitor progress
 ### Step 1: Dump the HTML
 
 ```bash
-python cli.py dump --url "https://www.idealista.it/affitto-case/bologna/" -o idealista_search.html
-python cli.py dump --url "https://www.idealista.it/immobile/12345/" -o idealista_detail.html
+python -m apt_scrape.cli dump --url "https://www.idealista.it/affitto-case/bologna/" -o idealista_search.html
+python -m apt_scrape.cli dump --url "https://www.idealista.it/immobile/12345/" -o idealista_detail.html
 ```
 
 Open in a browser and use DevTools to identify CSS selectors.
@@ -367,8 +367,8 @@ ADAPTERS: list[SiteAdapter] = [
 ### Step 4: Test and refine selectors
 
 ```bash
-python cli.py search --city bologna --source idealista --max-price 900
-python cli.py dump --url "https://www.idealista.it/affitto-case/bologna/" -o debug.html
+python -m apt_scrape.cli search --city bologna --source idealista --max-price 900
+python -m apt_scrape.cli dump --url "https://www.idealista.it/affitto-case/bologna/" -o debug.html
 ```
 
 ### When to Override
