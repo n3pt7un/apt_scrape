@@ -10,7 +10,7 @@
 
 The current README describes the original CLI/MCP tool but is significantly out of date. Since then the project has grown into a full platform:
 
-- **Streamlit dashboard** with 6 pages (Search Configs, Monitor, Listings, Site Settings, Stats, Preferences)
+- **Streamlit dashboard** with 6 pages (Search Configs, Monitor, Preferences, Listings, Site Settings, Stats) — in sidebar order
 - **FastAPI backend** with APScheduler for cron-triggered scrape jobs
 - **`apt` dev CLI** (`start` / `stop` / `status` / `restart` / `logs`)
 - **Docker Compose** setup alongside the existing local dev setup
@@ -95,14 +95,27 @@ Table: OPENROUTER_API_KEY, OPENROUTER_MODEL, NOTION_API_KEY, NOTION_DATABASE_ID,
 
 ---
 
+## Screenshot Filenames
+
+All 5 screenshots live in `docs/screenshots/`:
+
+| Filename | Page |
+|----------|------|
+| `docs/screenshots/search-configs.png` | Search Configurations |
+| `docs/screenshots/monitor.png` | Job Monitor |
+| `docs/screenshots/listings.png` | Listings (AI scored) |
+| `docs/screenshots/stats.png` | Statistics |
+| `docs/screenshots/site-settings.png` | Site Settings (full-width) |
+
+The user will drop real PNGs there before merging. The implementation must create `docs/screenshots/.gitkeep` so the directory is tracked and the README image links resolve (they will show broken images until PNGs are added, which is acceptable pre-merge).
+
 ## Files to Change
 
 | File | Change |
 |------|--------|
 | `README.md` | Full rewrite per structure above |
 | `docs/running-locally.md` | Add `apt` CLI section, env vars table, Notion/AI setup |
-| `docs/screenshots/` | New directory — user drops 5 PNGs here |
-| `.gitignore` | Add `.superpowers/` if not present |
+| `docs/screenshots/.gitkeep` | New file — tracks the empty directory in git |
 
 ## Files to Leave Unchanged
 
@@ -116,19 +129,37 @@ Table: OPENROUTER_API_KEY, OPENROUTER_MODEL, NOTION_API_KEY, NOTION_DATABASE_ID,
 
 Add the following sections:
 
-1. **`apt` CLI** — `apt start`, `apt stop`, `apt status`, `apt restart`, `apt logs [backend|frontend]`
-2. **Environment variables** — table of all required/optional env vars with descriptions and defaults
-3. **AI scoring setup** — set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`; point `PREFERENCES_FILE` at a plain-text file describing what you want in a flat
-4. **Notion integration** — set `NOTION_API_KEY` and `NOTION_DATABASE_ID`; mark duplicates via the Search Configs UI
+1. **`apt` CLI** — consolidate and expand the existing `./apt logs` mention into a full `apt` CLI section covering `start`, `stop`, `status`, `restart`, `logs [backend|frontend] [-n N] [-f]` with a command table. Include the `-n/--lines` and `-f/--follow` flags for `logs`. Remove the standalone `./apt logs` mention to avoid duplication.
+2. **Environment variables** — table with the following rows:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DB_PATH` | no | `data/app.db` | SQLite database path |
+| `PREFERENCES_FILE` | no | `preferences.txt` (repo root) | Plain-text file used for AI scoring; `apt` CLI defaults to repo root, scripts default to `data/preferences.txt` |
+| `BACKEND_URL` | no | `http://127.0.0.1:8000` | URL the frontend uses to reach the backend |
+| `OPENROUTER_API_KEY` | for AI scoring | — | OpenRouter API key |
+| `OPENROUTER_MODEL` | no | `google/gemini-2.0-flash-lite` (`.env.example`) | Model slug passed to OpenRouter; code fallback is `google/gemini-3.1-flash-lite-preview` |
+| `ANALYSIS_CONCURRENCY` | no | `5` | Max parallel AI scoring calls |
+| `NOTION_API_KEY` | for Notion push | — | Notion integration token |
+| `NOTION_APARTMENTS_DB_ID` | for Notion push | — | Notion database ID for apartment listings |
+| `NOTION_AREAS_DB_ID` | for Notion push | — | Notion database ID for areas |
+| `NOTION_AGENCIES_DB_ID` | for Notion push | — | Notion database ID for agencies |
+| `NORDVPN_USER` | for proxy rotation | — | NordVPN service username (not account login) |
+| `NORDVPN_PASS` | for proxy rotation | — | NordVPN service password |
+| `NORDVPN_SERVERS` | for proxy rotation | — | Comma-separated SOCKS5 hostnames |
+| `PROXY_ROTATE_EVERY` | no | `15` | Requests before rotating proxy |
+
+3. **AI scoring setup** — set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`; point `PREFERENCES_FILE` at a plain-text file describing preferences
+4. **Notion integration** — set `NOTION_API_KEY` and `NOTION_DATABASE_ID`; duplicate detection runs automatically on push
 
 ---
 
 ## Success Criteria
 
-- [ ] README renders cleanly on GitHub with no broken image links (screenshots at correct paths)
-- [ ] All 5 screenshots referenced match files in `docs/screenshots/`
-- [ ] `apt start` / Docker setup instructions are accurate and tested
-- [ ] Environment variable table is complete
-- [ ] `running-locally.md` covers `apt` CLI and all env vars
-- [ ] `.superpowers/` is in `.gitignore`
+- [ ] README renders correctly on GitHub (no broken image links once PNGs are added)
+- [ ] All 5 PNG files confirmed present at the named paths in `docs/screenshots/` before merging
+- [ ] `docs/screenshots/.gitkeep` committed so the directory exists in the PR
+- [ ] `apt start` / Docker setup instructions are accurate
+- [ ] Environment variable table covers all 12 variables defined in spec
+- [ ] `running-locally.md` covers `apt` CLI (with `-n`/`-f` flags) and all env vars
 - [ ] Branch merged to main via PR
