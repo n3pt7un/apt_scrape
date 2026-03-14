@@ -160,6 +160,6 @@ Add the following sections:
 - [ ] All 5 PNG files confirmed present at the named paths in `docs/screenshots/` before merging
 - [ ] `docs/screenshots/.gitkeep` committed so the directory exists in the PR
 - [ ] `apt start` / Docker setup instructions are accurate
-- [ ] Environment variable table covers all 12 variables defined in spec
+- [ ] Environment variable table covers all 14 variables defined in spec
 - [ ] `running-locally.md` covers `apt` CLI (with `-n`/`-f` flags) and all env vars
 - [ ] Branch merged to main via PR
