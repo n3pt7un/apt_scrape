@@ -9,6 +9,7 @@ Commands:
   restart   Restart a service
 """
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -18,13 +19,19 @@ from pathlib import Path
 import click
 
 REPO_ROOT = Path(__file__).resolve().parent
+
+
+def _find_bin(name: str) -> str:
+    """Find a binary on PATH, fall back to running via sys.executable -m."""
+    found = shutil.which(name)
+    return found if found else name  # let the shell error if missing
 PID_DIR = REPO_ROOT / ".pids"
 LOG_DIR = REPO_ROOT / ".logs"
 
 SERVICES = {
     "backend": {
-        "cmd": [
-            sys.executable, "-m", "uvicorn", "backend.main:app",
+        "cmd": lambda: [
+            _find_bin("uvicorn"), "backend.main:app",
             "--host", "0.0.0.0", "--port", "8000", "--reload",
         ],
         "env": {
@@ -36,8 +43,8 @@ SERVICES = {
         "url": "http://localhost:8000/health",
     },
     "frontend": {
-        "cmd": [
-            sys.executable, "-m", "streamlit", "run",
+        "cmd": lambda: [
+            _find_bin("streamlit"), "run",
             str(REPO_ROOT / "frontend" / "app.py"),
             "--server.port", "8501",
             "--server.address", "0.0.0.0",
@@ -94,7 +101,7 @@ def _start_service(name: str, verbose: bool = True) -> bool:
 
     with open(log_path, "a") as logf:
         proc = subprocess.Popen(
-            svc["cmd"],
+            svc["cmd"](),
             cwd=svc["cwd"],
             env=env,
             stdout=logf,
