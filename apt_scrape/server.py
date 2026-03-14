@@ -116,6 +116,7 @@ class BrowserManager:
         self._relay_proc = None
         self._relay_port: int = 0
         self._rotation_lock = asyncio.Lock()
+        self._rate_limit_lock = asyncio.Lock()
 
         if self._proxy_list:
             logger.info(
@@ -132,6 +133,11 @@ class BrowserManager:
 
     async def _ensure_browser(self) -> None:
         """Start the Camoufox browser if not already running."""
+        if self._browser is not None:
+            if not self._browser.is_connected():
+                logger.warning("Browser disconnected unexpectedly. Cleaning up...")
+                await self.close()
+
         if self._browser is not None:
             return
 
@@ -263,11 +269,12 @@ class BrowserManager:
 
     async def _rate_limit(self) -> None:
         """Enforce the minimum delay between consecutive requests."""
-        now = time.monotonic()
-        elapsed = now - self._last_request_time
-        if elapsed < REQUEST_DELAY_SECONDS:
-            await asyncio.sleep(REQUEST_DELAY_SECONDS - elapsed)
-        self._last_request_time = time.monotonic()
+        async with self._rate_limit_lock:
+            now = time.monotonic()
+            elapsed = now - self._last_request_time
+            if elapsed < REQUEST_DELAY_SECONDS:
+                await asyncio.sleep(REQUEST_DELAY_SECONDS - elapsed)
+            self._last_request_time = time.monotonic()
 
     async def fetch_page(self, url: str, wait_selector: str | None = None) -> str:
         """Fetch *url* via the stealth browser and return raw HTML.
@@ -298,10 +305,17 @@ class BrowserManager:
         try:
             html = await self._fetch_once(url, wait_selector)
         except Exception as exc:
-            if not self._proxy_list:
+            err_str = str(exc).lower()
+            if "targetclosederror" in str(type(exc)).lower() or "closed=true" in err_str or "handler is closed" in err_str:
+                logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
+                await self.close()
+                await self._ensure_browser()
+                html = await self._fetch_once(url, wait_selector)
+            elif not self._proxy_list:
                 raise
-            logger.warning("Fetch error on %s (%s) — rotating proxy and retrying.", url, exc)
-            html = None
+            else:
+                logger.warning("Fetch error on %s (%s) — rotating proxy and retrying.", url, exc)
+                html = None
 
         if self._proxy_list and (html is None or self._detect_block(html)):
             # Cycle through ALL remaining proxies before giving up
@@ -361,10 +375,17 @@ class BrowserManager:
         try:
             html = await self._fetch_once(url, wait_selector)
         except Exception as exc:
-            if not self._proxy_list:
+            err_str = str(exc).lower()
+            if "targetclosederror" in str(type(exc)).lower() or "closed=true" in err_str or "handler is closed" in err_str:
+                logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
+                await self.close()
+                await self._ensure_browser()
+                html = await self._fetch_once(url, wait_selector)
+            elif not self._proxy_list:
                 raise
-            logger.warning("Fetch error on %s (%s) — rotating proxy and retrying.", url, exc)
-            html = None
+            else:
+                logger.warning("Fetch error on %s (%s) — rotating proxy and retrying.", url, exc)
+                html = None
 
         if self._proxy_list and (html is None or self._detect_block(html)):
             for attempt in range(len(self._proxy_list)):
