@@ -38,3 +38,12 @@ results/
 .env
 .env.local
 .env.*
+!.env.example
+
+# Docker platform data (SQLite DB, preferences, results)
+data/app.db
+data/preferences.txt
+data/results/
+
+# Superpowers internal directory
+.superpowers/
