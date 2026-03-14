@@ -205,7 +205,7 @@ Copy `mcp_config_example.json`, update `cwd` to your local path, and add it to y
   "mcpServers": {
     "rent-fetch": {
       "command": "python",
-      "args": ["server.py"],
+      "args": ["-m", "apt_scrape.server"],
       "cwd": "/path/to/rent-fetch"
     }
   }
