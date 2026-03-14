@@ -31,6 +31,28 @@ pip install -r requirements.txt
 camoufox fetch                  # downloads browser binary on first run (~100 MB)
 ```
 
+## Dashboard (Streamlit + Backend)
+
+The app can run a **Streamlit UI** and **FastAPI backend** locally (no Docker).
+
+**One-time:** install backend and frontend deps, then start both processes:
+
+```bash
+pip install -r requirements.txt -r backend/requirements.txt -r frontend/requirements.txt
+```
+
+**Terminal 1 — Backend:**
+```bash
+./scripts/run_backend.sh
+```
+
+**Terminal 2 — Frontend:**
+```bash
+./scripts/run_frontend.sh
+```
+
+Open **http://127.0.0.1:8501** in the browser (use the sidebar to navigate; opening a sub-page URL directly can cause a 404). See [docs/running-locally.md](docs/running-locally.md) for details and troubleshooting.
+
 ## CLI Usage
 
 ### Search

@@ -8,7 +8,19 @@ import api
 st.set_page_config(page_title="Monitor", page_icon="📡", layout="wide")
 st.title("📡 Job Monitor")
 
-STATUS_COLORS = {"running": "🟡", "done": "🟢", "failed": "🔴", "pending": "⚪"}
+STATUS_ICON = {"running": "🟡", "done": "🟢", "failed": "🔴", "pending": "⚪"}
+
+# Build config name map
+try:
+    configs_list = api.get("/configs")
+    config_names = {c["id"]: c["name"] for c in configs_list}
+except Exception:
+    config_names = {}
+
+
+def cfg_label(config_id):
+    name = config_names.get(config_id)
+    return f"{name} (#{config_id})" if name else f"#{config_id}"
 
 
 def render():
@@ -25,8 +37,14 @@ def render():
         st.subheader("Active Jobs")
         for job in running:
             with st.container(border=True):
-                st.markdown(f"{STATUS_COLORS['running']} **Job #{job['id']}** — config {job['config_id']} — `running`")
-                st.caption(f"Started: {job.get('started_at', '—')}")
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    st.markdown(
+                        f"🟡 **Job #{job['id']}** — {cfg_label(job['config_id'])} — `running`"
+                    )
+                    st.caption(f"Started: {str(job.get('started_at', '—'))[:19]}")
+                with c2:
+                    st.caption(f"Triggered by: {job.get('triggered_by', '—')}")
                 log_lines = (job.get("log") or "").strip().split("\n")
                 st.code("\n".join(log_lines[-10:]), language=None)
     else:
@@ -35,11 +53,14 @@ def render():
     st.subheader("Recent Jobs")
     if recent:
         for job in recent:
-            icon = STATUS_COLORS.get(job["status"], "⚪")
-            with st.expander(
-                f"{icon} Job #{job['id']} — config {job['config_id']} — `{job['status']}` — {job.get('listing_count', 0)} listings — {job.get('finished_at', '')}",
-                expanded=False,
-            ):
+            icon = STATUS_ICON.get(job["status"], "⚪")
+            listings_str = f"{job.get('listing_count') or 0} listings"
+            finished = str(job.get("finished_at") or "")[:16]
+            label = (
+                f"{icon} Job #{job['id']} · {cfg_label(job['config_id'])} · "
+                f"`{job['status']}` · {listings_str} · {finished}"
+            )
+            with st.expander(label, expanded=False):
                 try:
                     detail = api.get(f"/jobs/{job['id']}")
                     st.code(detail.get("log", "(no log)"), language=None)
@@ -51,6 +72,6 @@ def render():
 
 render()
 
-# Auto-refresh every 5 seconds
+# Auto-refresh every 5 seconds while any job is running
 time.sleep(5)
 st.rerun()

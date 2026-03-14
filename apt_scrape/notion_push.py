@@ -262,7 +262,7 @@ def _build_properties(
         props["Energy Class"] = {"select": {"name": energy}}
     if furnished is not None:
         props["Furnished"] = {"checkbox": furnished}
-    if available_from:
+    if available_from and re.match(r"^\d{4}-\d{2}-\d{2}(T|$)", available_from):
         props["Available From"] = {"date": {"start": available_from}}
     if lat_lon:
         props["Place"] = {"place": {"lat": lat_lon[0], "lon": lat_lon[1]}}

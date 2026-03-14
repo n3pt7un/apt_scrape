@@ -6,7 +6,7 @@ import logging
 from fastapi import FastAPI
 
 from backend.db import create_db_and_tables
-from backend.routers import configs, jobs, preferences
+from backend.routers import configs, jobs, listings, preferences
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ app = FastAPI(title="apt_scrape backend", lifespan=lifespan)
 
 app.include_router(configs.router, prefix="/configs", tags=["configs"])
 app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
+app.include_router(listings.router, prefix="/listings", tags=["listings"])
 app.include_router(preferences.router, prefix="/preferences", tags=["preferences"])
 
 
