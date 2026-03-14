@@ -126,7 +126,7 @@ def toggle_config(config_id: int, session: Session = Depends(get_session)):
 
 
 @router.post("/{config_id}/run")
-def run_config_now(config_id: int, session: Session = Depends(get_session)):
+async def run_config_now(config_id: int, session: Session = Depends(get_session)):
     cfg = session.get(SearchConfig, config_id)
     if not cfg:
         raise HTTPException(404, "Config not found")

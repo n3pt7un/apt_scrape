@@ -39,6 +39,9 @@ def render(jobs):
                     st.caption(f"Started: {str(job.get('started_at', '—'))[:19]}")
                 with c2:
                     st.caption(f"Triggered by: {job.get('triggered_by', '—')}")
+                    if st.button("Cancel & Delete", key=f"del_run_{job['id']}", use_container_width=True):
+                        api.delete(f"/jobs/{job['id']}")
+                        st.rerun()
                 log_lines = (job.get("log") or "").strip().split("\n")
                 st.code("\n".join(log_lines[-10:]), language=None)
     else:
@@ -55,11 +58,20 @@ def render(jobs):
                 f"`{job['status']}` · {listings_str} · {finished}"
             )
             with st.expander(label, expanded=False):
-                try:
-                    detail = api.get(f"/jobs/{job['id']}")
-                    st.code(detail.get("log", "(no log)"), language=None)
-                except Exception as e:
-                    st.error(str(e))
+                c_del, c_log = st.columns([1, 5])
+                with c_del:
+                    if st.button("Delete", key=f"del_rec_{job['id']}", use_container_width=True):
+                        try:
+                            api.delete(f"/jobs/{job['id']}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+                with c_log:
+                    try:
+                        detail = api.get(f"/jobs/{job['id']}")
+                        st.code(detail.get("log", "(no log)"), language=None)
+                    except Exception as e:
+                        st.error(str(e))
     else:
         st.info("No completed jobs yet.")
 

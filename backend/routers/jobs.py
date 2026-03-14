@@ -25,3 +25,27 @@ def get_job(job_id: int, session: Session = Depends(get_session)):
     if not job:
         raise HTTPException(404, "Job not found")
     return job.model_dump()
+
+
+@router.delete("/{job_id}", status_code=204)
+def delete_job(job_id: int, session: Session = Depends(get_session)):
+    from fastapi import Response
+    job = session.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    session.delete(job)
+    session.commit()
+    return Response(status_code=204)
+from backend.routers.jobs import router
+from fastapi import Response, Depends, APIRouter, HTTPException
+from sqlmodel import Session
+from backend.db import Job, get_session
+
+@router.delete("/{job_id}", status_code=204)
+def delete_job(job_id: int, session: Session = Depends(get_session)):
+    job = session.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    session.delete(job)
+    session.commit()
+    return Response(status_code=204)

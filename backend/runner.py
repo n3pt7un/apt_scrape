@@ -138,20 +138,36 @@ async def run_config_job(
                 deduped.append(listing)
         _log(f"Total unique listings: {len(deduped)}")
 
-        # 3. Enrich details
-        _log(f"Enriching details (concurrency={detail_concurrency})...")
-        await enrich_with_details(
-            deduped, browser, adapter, None,
-            concurrency=detail_concurrency,
-            rotate_every_batches=vpn_rotate_batches,
-        )
+        # 2a. Check Notion duplicates upfront
+        to_enrich = deduped
+        if auto_notion_push:
+            _log("Checking Notion for already-pushed listings to skip enrichment...")
+            try:
+                from apt_scrape.notion_push import mark_notion_duplicates
+                num_skipped = await mark_notion_duplicates(deduped)
+                if num_skipped > 0:
+                    _log(f"Found {num_skipped} listings already in Notion. Skipping heavy enrichment for them.")
+                to_enrich = [L for L in deduped if not L.get("notion_skipped")]
+            except Exception as e:
+                _log(f"[warn] Failed to do Notion pre-check: {e}")
 
-        # 4. Enrich post dates
-        await enrich_post_dates(
-            deduped, browser, adapter,
-            concurrency=detail_concurrency,
-            rotate_every_batches=vpn_rotate_batches,
-        )
+        # 3. Enrich details
+        if to_enrich:
+            _log(f"Enriching details for {len(to_enrich)} listings (concurrency={detail_concurrency})...")
+            await enrich_with_details(
+                to_enrich, browser, adapter, None,
+                concurrency=detail_concurrency,
+                rotate_every_batches=vpn_rotate_batches,
+            )
+
+            # 4. Enrich post dates
+            await enrich_post_dates(
+                to_enrich, browser, adapter,
+                concurrency=detail_concurrency,
+                rotate_every_batches=vpn_rotate_batches,
+            )
+        else:
+            _log("No new listings require enrichment.")
 
         # 5. Stamp area/city
         for listing in deduped:
@@ -159,12 +175,12 @@ async def run_config_job(
             listing["_city"] = city_slug
 
         # 6. AI Analysis
-        if auto_analyse and deduped:
+        if auto_analyse and to_enrich:
             _log("Running AI analysis...")
             from apt_scrape.analysis import analyse_listings, load_preferences
             try:
                 prefs = load_preferences()
-                await analyse_listings(deduped, prefs)
+                await analyse_listings(to_enrich, prefs)
                 _log("Analysis complete.")
             except FileNotFoundError:
                 _log("[warn] preferences.txt not found — skipping analysis.")

@@ -301,6 +301,33 @@ def _build_properties(
 # ---------------------------------------------------------------------------
 
 
+async def mark_notion_duplicates(listings: list[dict]) -> int:
+    """Check Notion for duplicates and mark them in-place to avoid re-enrichment.
+    Returns the number of duplicates found.
+    """
+    api_key = os.environ.get("NOTION_API_KEY", "")
+    apartments_db_id = os.environ.get("NOTION_APARTMENTS_DB_ID", "")
+    if not api_key or not apartments_db_id or not listings:
+        return 0
+
+    skipped = 0
+    async with AsyncClient(auth=api_key) as client:
+        # Minimal check, not doing full schema or caching areas
+        for listing in listings:
+            if "notion_skipped" in listing:
+                continue
+            url = listing.get("url", "")
+            if not url:
+                continue
+            existing_id = await _is_duplicate(client, apartments_db_id, url)
+            if existing_id:
+                listing["notion_skipped"] = True
+                listing["notion_page_id"] = existing_id
+                listing["notion_page_url"] = f"https://www.notion.so/{existing_id.replace('-', '')}"
+                skipped += 1
+    return skipped
+
+
 async def push_listings(listings: list[dict]) -> None:
     """Create Notion Apartments pages for each listing in-place.
 
@@ -320,6 +347,10 @@ async def push_listings(listings: list[dict]) -> None:
 
         created = skipped = 0
         for listing in listings:
+            if listing.get("notion_skipped"):
+                skipped += 1
+                continue
+
             url = listing.get("url", "")
             existing_id = await _is_duplicate(client, apartments_db_id, url)
 
