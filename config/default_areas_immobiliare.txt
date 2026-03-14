@@ -1,0 +1,13 @@
+# Default areas for immobiliare (scrape_multiple_areas.sh)
+# Keep in sync with AREAS in scrape_multiple_areas.sh
+bicocca
+niguarda
+precotto
+loreto
+citta-studi
+lambrate
+turro
+greco-segnano
+crescenzago
+centrale
+pasteur-rovereto

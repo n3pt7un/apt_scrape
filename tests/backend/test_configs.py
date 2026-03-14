@@ -75,3 +75,28 @@ def test_delete_config():
 
     get_resp = client.get(f"/configs/{cfg_id}")
     assert get_resp.status_code == 404
+
+
+def test_create_config_with_site_and_delays():
+    payload = {**VALID_CONFIG, "site_id": "casa", "request_delay_sec": 3.0, "page_delay_sec": 1.0}
+    resp = client.post("/configs", json=payload)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["site_id"] == "casa"
+    assert data["request_delay_sec"] == 3.0
+    assert data["page_delay_sec"] == 1.0
+
+
+def test_create_config_invalid_site_id_returns_422():
+    payload = {**VALID_CONFIG, "site_id": "unknown_site"}
+    resp = client.post("/configs", json=payload)
+    assert resp.status_code == 422
+
+
+def test_get_configs_sites():
+    resp = client.get("/configs/sites")
+    assert resp.status_code == 200
+    sites = resp.json()
+    assert isinstance(sites, list)
+    assert "immobiliare" in sites
+    assert "casa" in sites

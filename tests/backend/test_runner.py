@@ -43,7 +43,7 @@ def test_run_config_job_creates_job_record():
 
     with (
         patch("backend.runner.browser") as mock_browser,
-        patch("backend.runner.get_adapter") as mock_get_adapter,
+        patch("backend.runner.get_adapter_with_overrides") as mock_get_adapter,
         patch("backend.runner.enrich_with_details", new_callable=AsyncMock) as mock_enrich,
         patch("backend.runner.enrich_post_dates", new_callable=AsyncMock) as mock_post_dates,
     ):

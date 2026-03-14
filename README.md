@@ -51,7 +51,7 @@ pip install -r requirements.txt -r backend/requirements.txt -r frontend/requirem
 ./scripts/run_frontend.sh
 ```
 
-Open **http://127.0.0.1:8501** in the browser (use the sidebar to navigate; opening a sub-page URL directly can cause a 404). See [docs/running-locally.md](docs/running-locally.md) for details and troubleshooting.
+Open **http://127.0.0.1:8501** in the browser (use the sidebar to navigate; opening a sub-page URL directly can cause a 404). Search Configs support site selection and rate limits (request/page delay); use **Site settings** to configure per-site areas and selectors. See [docs/running-locally.md](docs/running-locally.md) for details and troubleshooting.
 
 ## CLI Usage
 

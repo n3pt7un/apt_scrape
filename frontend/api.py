@@ -4,6 +4,24 @@ import httpx
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
+# Fallback when GET /sites/{id}/areas fails; per-site to match shell scripts
+DEFAULT_AREAS = [
+    "bicocca", "niguarda", "precotto", "loreto", "citta-studi",
+    "lambrate", "turro", "greco-segnano", "crescenzago", "centrale", "pasteur-rovereto",
+]
+# Per-site defaults (match config/default_areas_{site}.txt and scrape_multiple_areas_*.sh)
+DEFAULT_AREAS_BY_SITE = {
+    "immobiliare": DEFAULT_AREAS,  # full list + pasteur-rovereto
+    "casa": [
+        "bicocca", "niguarda", "precotto", "citta-studi", "lambrate",
+        "turro", "greco-segnano", "crescenzago", "centrale",
+    ],
+    "idealista": [
+        "bicocca", "niguarda", "precotto", "loreto", "citta-studi",
+        "lambrate", "turro", "greco-segnano", "crescenzago", "centrale",
+    ],
+}
+
 
 def get(path: str, **kwargs) -> dict:
     with httpx.Client(base_url=BACKEND_URL, timeout=30) as client:

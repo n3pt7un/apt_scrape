@@ -16,6 +16,10 @@ To add a new site:
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import yaml
+
 from .base import (
     ClassifyResult,
     DetailSelectors,
@@ -27,6 +31,9 @@ from .base import (
     SiteAdapter,
     SiteConfig,
     classify_feature,
+    config_from_dict,
+    config_to_dict,
+    deep_merge,
     extract_attr,
     extract_text,
 )
@@ -47,9 +54,13 @@ __all__ = [
     "SiteConfig",
     "adapter_for_url",
     "classify_feature",
+    "config_to_dict",
+    "deep_merge",
     "extract_attr",
     "extract_text",
     "get_adapter",
+    "get_adapter_with_overrides",
+    "get_config_path",
     "list_adapter_details",
     "list_adapters",
 ]
@@ -66,6 +77,14 @@ ADAPTERS: list[SiteAdapter] = [
 ]
 
 _BY_ID: dict[str, SiteAdapter] = {a.site_id: a for a in ADAPTERS}
+
+# For get_adapter_with_overrides: site_id -> (adapter_class, config_path)
+_PACKAGE_DIR = Path(__file__).resolve().parent
+_CONFIG_PATHS: dict[str, tuple[type[SiteAdapter], str]] = {
+    "immobiliare": (ImmobiliareAdapter, str(_PACKAGE_DIR / "configs" / "immobiliare.yaml")),
+    "casa": (CasaAdapter, str(_PACKAGE_DIR / "configs" / "casa.yaml")),
+    "idealista": (IdealistaAdapter, str(_PACKAGE_DIR / "configs" / "idealista.yaml")),
+}
 
 
 def get_adapter(site_id: str) -> SiteAdapter:
@@ -109,6 +128,33 @@ def list_adapters() -> list[str]:
         List of site ID strings (e.g. ``["immobiliare", "casa"]``).
     """
     return [a.site_id for a in ADAPTERS]
+
+
+def get_config_path(site_id: str) -> str:
+    """Return the path to the YAML config file for the given site."""
+    if site_id not in _CONFIG_PATHS:
+        raise KeyError(f"Unknown site '{site_id}'")
+    return _CONFIG_PATHS[site_id][1]
+
+
+def get_adapter_with_overrides(site_id: str, overrides: dict | None = None) -> SiteAdapter:
+    """Return an adapter with optional config overrides merged on top of the base YAML config.
+
+    If overrides is None or empty, returns the same as get_adapter(site_id).
+    Otherwise loads the base config dict from the site's YAML, deep_merges overrides,
+    builds a SiteConfig, and returns a new adapter instance with that config.
+    """
+    if not overrides:
+        return get_adapter(site_id)
+    if site_id not in _BY_ID:
+        available = ", ".join(sorted(_BY_ID.keys()))
+        raise KeyError(f"Unknown site '{site_id}'. Available: {available}")
+    adapter_class, config_path = _CONFIG_PATHS[site_id]
+    with open(config_path, encoding="utf-8") as fh:
+        base_dict = yaml.safe_load(fh)
+    merged = deep_merge(base_dict, overrides)
+    config = config_from_dict(merged)
+    return adapter_class(config)
 
 
 def list_adapter_details() -> list[dict[str, str]]:

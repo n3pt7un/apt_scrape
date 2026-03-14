@@ -12,7 +12,7 @@ mapping is missing.
 from pathlib import Path
 from urllib.parse import urlencode
 
-from .base import SearchFilters, SiteAdapter, load_config_from_yaml
+from .base import SearchFilters, SiteAdapter, SiteConfig, load_config_from_yaml
 
 _CONFIG_PATH = Path(__file__).parent / "configs" / "casa.yaml"
 
@@ -26,8 +26,10 @@ class CasaAdapter(SiteAdapter):
     to that value.
     """
 
-    def __init__(self) -> None:
-        super().__init__(load_config_from_yaml(_CONFIG_PATH))
+    def __init__(self, config: SiteConfig | None = None) -> None:
+        if config is None:
+            config = load_config_from_yaml(_CONFIG_PATH)
+        super().__init__(config)
 
     def build_search_url(self, filters: SearchFilters) -> str:
         """Build Casa.it search URL using the `/srp/` pattern and `q` codes.

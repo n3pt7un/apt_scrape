@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Redesign Search Configs form with correct create/edit behavior, add per-config site selection and rate-limiting (request delay, page delay, optional timeout), fix Monitor auto-refresh, and align Listings with the API.
+**Goal:** Redesign Search Configs form with correct create/edit behavior, add per-config site selection and rate-limiting (request delay, page delay, optional timeout), fix Monitor auto-refresh, align Listings with the API, and add per-site config overrides (areas, selectors, wait selectors) so users can experiment with site parameters.
 
-**Architecture:** Expand `SearchConfig` schema in backend/db.py; validate and persist new fields in configs router; apply site and delays in backend/runner.py (no changes to apt_scrape). Streamlit form rewritten with explicit defaults and clear sections; Monitor only auto-refreshes when jobs are running.
+**Architecture:** Expand `SearchConfig` schema in backend/db.py; validate and persist new fields in configs router; apply site and delays in backend/runner.py. Minimal apt_scrape extension for config overrides (config_from_dict, config_to_dict, deep_merge, get_adapter_with_overrides). Backend stores site overrides and exposes GET/PUT /sites/{id}/config and GET /sites/{id}/areas. Streamlit form rewritten with explicit defaults; area dropdown driven by selected site; new Site settings page for editing overrides. Monitor only auto-refreshes when jobs are running.
 
 **Tech Stack:** SQLModel, FastAPI, Streamlit, existing apt_scrape adapters (immobiliare, casa, idealista).
 
@@ -21,6 +21,13 @@
 | `backend/runner.py` | Use cfg.site_id with get_adapter(); apply request_delay_sec and page_delay_sec. |
 | `frontend/pages/1_Search_Configs.py` | Redesigned form: sections, explicit values (no None), site + rate limit fields. |
 | `frontend/pages/2_Monitor.py` | Conditional refresh: sleep+rerun only when any job is running. |
+| `backend/db.py` (site overrides) | New model or table for site_config_overrides (site_id, overrides JSON). |
+| `backend/routers/sites.py` | GET /sites, GET/PUT /sites/{id}/config, GET /sites/{id}/areas. |
+| `backend/runner.py` (overrides) | Load overrides for job's site_id; call get_adapter_with_overrides(site_id, overrides). |
+| `apt_scrape/sites/base.py` | config_from_dict, config_to_dict, deep_merge; refactor load_config_from_yaml to use config_from_dict. |
+| `apt_scrape/sites/__init__.py` | get_adapter_with_overrides; site_id -> (adapter_class, config_path) mapping. |
+| `frontend/pages/5_Site_Settings.py` | New page: select site, edit areas + wait selectors + optional selector overrides, save. |
+| `frontend/pages/1_Search_Configs.py` (areas) | Area dropdown/options from GET /sites/{site_id}/areas when site selected. |
 | `tests/backend/test_db.py` | Optional: assert new columns exist and defaults. |
 | `tests/backend/test_configs.py` | Tests for new fields in create/update/list. |
 | `tests/backend/test_runner.py` | Mock get_adapter by site_id; assert asyncio.sleep called with delay. |
@@ -290,8 +297,128 @@ git commit -m "docs: document dashboard site and rate-limit options"
 
 ---
 
+## Chunk 7: Per-site config overrides
+
+Implement only after Chunks 1–6 are done. Spec: design doc §8.
+
+### Task 8: apt_scrape — config_from_dict, config_to_dict, deep_merge, get_adapter_with_overrides
+
+**Files:** Modify `apt_scrape/sites/base.py`; modify `apt_scrape/sites/__init__.py`.
+
+- [ ] **Step 1: Extract config_from_dict in base.py**
+
+Refactor `load_config_from_yaml` so the dict → SiteConfig logic lives in a new function `config_from_dict(d: dict) -> SiteConfig` (same structure as current YAML load). Change `load_config_from_yaml(path)` to open the file, `yaml.safe_load`, and call `config_from_dict(d)`.
+
+- [ ] **Step 2: Add config_to_dict in base.py**
+
+Implement `config_to_dict(config: SiteConfig) -> dict` that serializes the config to a nested dict (SelectorGroup → list of strings, SearchSelectors/DetailSelectors → nested dicts of lists). Export in `__all__`.
+
+- [ ] **Step 3: Add deep_merge in base.py**
+
+Implement `deep_merge(base: dict, overrides: dict) -> dict`. For dicts, recurse; for lists, overrides replace base; for scalars, overrides win. Export in `__all__`.
+
+- [ ] **Step 4: Add get_adapter_with_overrides in __init__.py**
+
+Build a mapping `site_id -> (adapter_class, config_path)` using each adapter module’s `_CONFIG_PATH`. Implement `get_adapter_with_overrides(site_id: str, overrides: dict | None = None) -> SiteAdapter`: if not overrides, return `get_adapter(site_id)`. Else load base dict from config path (yaml.safe_load), `merged = deep_merge(base_dict, overrides)`, `config = config_from_dict(merged)`, instantiate the adapter class with `config` and return. Handle Idealista’s extra raw YAML keys if needed (area_map etc.) so merged config still works.
+
+- [ ] **Step 5: Run existing apt_scrape/sites tests**
+
+```bash
+python -m pytest tests/ -v -k "site or immobiliare or casa or idealista" 2>/dev/null || python -m pytest tests/ -v
+```
+
+Fix any regressions.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apt_scrape/sites/base.py apt_scrape/sites/__init__.py
+git commit -m "feat(apt_scrape): config_from_dict, config_to_dict, deep_merge, get_adapter_with_overrides for site overrides"
+```
+
+### Task 9: Backend — site_config_overrides table and sites router
+
+**Files:** Create or modify `backend/db.py` (new model); create `backend/routers/sites.py`; register router in `backend/main.py`; add tests.
+
+- [ ] **Step 1: Add SiteConfigOverride model in db.py**
+
+Table `siteconfigoverride` (or `site_config_overrides`): `site_id` (str, primary key), `overrides` (str, JSON). Default overrides = "{}".
+
+- [ ] **Step 2: Migration for new table**
+
+`create_db_and_tables()` already creates all tables; new model will create the table. For existing DBs, no ALTER needed (new table).
+
+- [ ] **Step 3: Create backend/routers/sites.py**
+
+- GET /sites → return `list_adapters()`.
+- GET /sites/{site_id}/config → load base config from apt_scrape (config_to_dict of default adapter’s config), load overrides from DB for site_id, deep_merge, return merged dict. Optionally also return `overrides` only for the UI.
+- GET /sites/{site_id}/areas → from overrides["areas"] if present, else from base config (e.g. area_map keys or "areas" key if any), else [].
+- PUT /sites/{site_id}/config → body: partial overrides dict. Load current overrides from DB, deep_merge body into it, save. Validate site_id in list_adapters().
+
+- [ ] **Step 4: Register sites router in main.py**
+
+`app.include_router(sites.router, prefix="/sites", tags=["sites"])`. Define GET /sites before GET /sites/{site_id} so "/sites" is not captured as site_id.
+
+- [ ] **Step 5: Add tests for sites router**
+
+Test GET /sites returns list; GET /sites/immobiliare/config returns dict with search_selectors; PUT then GET returns updated overrides; GET /sites/immobiliare/areas.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/db.py backend/routers/sites.py backend/main.py tests/
+git commit -m "feat(backend): site_config_overrides and sites API (config, areas)"
+```
+
+### Task 10: Runner uses get_adapter_with_overrides
+
+**Files:** Modify `backend/runner.py`.
+
+- [ ] **Step 1: Load overrides for config’s site_id**
+
+Before resolving the adapter, query SiteConfigOverride for cfg.site_id. If row exists and overrides non-empty, pass overrides (JSON parsed) to get_adapter_with_overrides(site_id, overrides). Otherwise get_adapter(site_id).
+
+- [ ] **Step 2: Run backend tests**
+
+```bash
+python -m pytest tests/backend/ -v
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add backend/runner.py
+git commit -m "feat(backend): runner uses get_adapter_with_overrides when site overrides exist"
+```
+
+### Task 11: Frontend — Site settings page and area dropdown
+
+**Files:** Create `frontend/pages/5_Site_Settings.py`; modify `frontend/pages/1_Search_Configs.py`.
+
+- [ ] **Step 1: Create 5_Site_Settings.py**
+
+Page title "Site settings". GET /sites for dropdown. On site select, GET /sites/{id}/config (or /config and /areas). Show areas (textarea one per line or multiselect), search_wait_selector, detail_wait_selector. Optional: expandable "Advanced" with search_selectors/detail_selectors as editable lists. Save → PUT /sites/{id}/config with overrides payload (only keys user can edit). Success message and rerun.
+
+- [ ] **Step 2: Search Configs area field from GET /sites/{site_id}/areas**
+
+When site_id changes (or on load when editing), call GET /sites/{site_id}/areas. Use returned list for area selectbox options (plus "Other" or free text for custom). If list empty, keep current preset or free text behavior.
+
+- [ ] **Step 3: Manual check**
+
+Open Site settings, select casa, set areas to ["bicocca","niguarda"], save. Open Search Configs, select site=casa, confirm area dropdown shows those areas. Run a job and confirm it uses overrides if set.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add frontend/pages/5_Site_Settings.py frontend/pages/1_Search_Configs.py
+git commit -m "feat(frontend): Site settings page and area dropdown from site overrides"
+```
+
+---
+
 ## Notes for implementers
 
-- **apt_scrape:** Do not change apt_scrape/server.py or enrichment. Delays are applied only in backend/runner.py around fetch_page and between pages.
+- **apt_scrape:** Delays are applied only in backend/runner.py. For overrides, apt_scrape gets config_from_dict, config_to_dict, deep_merge, get_adapter_with_overrides (design §8.1). Do not change server.py or enrichment.
 - **timeout_sec:** Stored in DB and API only; runner does not use it until apt_scrape exposes a page timeout parameter.
-- **GET /configs/sites:** Implement in configs router so the UI can stay in sync with list_adapters() without hardcoding site IDs in the frontend.
+- **GET /configs/sites:** Implement in configs router so the UI can stay in sync with list_adapters() without hardcoding site IDs.
+- **Site overrides:** Stored as JSON; only override keys are stored (partial merge on PUT). Runner loads overrides per job’s site_id and passes to get_adapter_with_overrides.

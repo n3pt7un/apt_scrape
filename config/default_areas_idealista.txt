@@ -1,0 +1,13 @@
+# Default areas for idealista (scrape_multiple_areas_idealista.sh)
+# Keep in sync with AREAS in scrape_multiple_areas_idealista.sh
+# (idealista.yaml area_map is used when present; this file is fallback)
+bicocca
+niguarda
+precotto
+loreto
+citta-studi
+lambrate
+turro
+greco-segnano
+crescenzago
+centrale

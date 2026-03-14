@@ -23,13 +23,7 @@ def cfg_label(config_id):
     return f"{name} (#{config_id})" if name else f"#{config_id}"
 
 
-def render():
-    try:
-        jobs = api.get("/jobs")
-    except Exception as e:
-        st.error(f"Cannot reach backend: {e}")
-        return
-
+def render(jobs):
     running = [j for j in jobs if j["status"] == "running"]
     recent = [j for j in jobs if j["status"] != "running"]
 
@@ -70,8 +64,15 @@ def render():
         st.info("No completed jobs yet.")
 
 
-render()
+try:
+    jobs = api.get("/jobs")
+except Exception as e:
+    st.error(f"Cannot reach backend: {e}")
+    jobs = []
+render(jobs)
 
-# Auto-refresh every 5 seconds while any job is running
-time.sleep(5)
-st.rerun()
+# Auto-refresh only when at least one job is running
+running = [j for j in jobs if j.get("status") == "running"]
+if running:
+    time.sleep(5)
+    st.rerun()

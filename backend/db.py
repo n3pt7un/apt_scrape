@@ -40,6 +40,10 @@ class SearchConfig(SQLModel, table=True):
     auto_notion_push: bool = False
     enabled: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    site_id: str = "immobiliare"
+    request_delay_sec: float = 2.0
+    page_delay_sec: float = 0.0
+    timeout_sec: Optional[int] = None
 
 
 class Job(SQLModel, table=True):
@@ -71,9 +75,34 @@ class Listing(SQLModel, table=True):
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class SiteConfigOverride(SQLModel, table=True):
+    """Per-site config overrides (areas, selectors, wait selectors). One row per site_id."""
+    site_id: str = Field(primary_key=True)
+    overrides: str = "{}"  # JSON dict
+
+
+def _migrate_searchconfig_20260314() -> None:
+    """Add site_id, request_delay_sec, page_delay_sec, timeout_sec to existing searchconfig table."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        result = conn.execute(text("PRAGMA table_info(searchconfig)"))
+        cols = [row[1] for row in result.fetchall()]
+        if "site_id" not in cols:
+            conn.execute(text("ALTER TABLE searchconfig ADD COLUMN site_id TEXT DEFAULT 'immobiliare'"))
+        if "request_delay_sec" not in cols:
+            conn.execute(text("ALTER TABLE searchconfig ADD COLUMN request_delay_sec REAL DEFAULT 2.0"))
+        if "page_delay_sec" not in cols:
+            conn.execute(text("ALTER TABLE searchconfig ADD COLUMN page_delay_sec REAL DEFAULT 0.0"))
+        if "timeout_sec" not in cols:
+            conn.execute(text("ALTER TABLE searchconfig ADD COLUMN timeout_sec INTEGER"))
+        conn.commit()
+
+
 def create_db_and_tables() -> None:
     """Create all tables if they don't exist. Safe to call multiple times."""
     SQLModel.metadata.create_all(engine)
+    if DB_PATH != ":memory:":
+        _migrate_searchconfig_20260314()
 
 
 def get_session():

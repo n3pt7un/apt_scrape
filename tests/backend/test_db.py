@@ -36,6 +36,10 @@ def test_search_config_defaults():
         assert cfg.detail_concurrency == 5
         assert cfg.start_page == 1
         assert cfg.end_page == 10
+        assert cfg.site_id == "immobiliare"
+        assert cfg.request_delay_sec == 2.0
+        assert cfg.page_delay_sec == 0.0
+        assert cfg.timeout_sec is None
 
 
 def test_job_links_to_config():

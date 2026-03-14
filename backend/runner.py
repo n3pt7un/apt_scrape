@@ -4,6 +4,7 @@ Pipeline order: scrape → enrich → post_dates → stamp → analyse → notio
 NEVER calls browser.close() — browser lifecycle is managed by FastAPI lifespan.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -14,7 +15,7 @@ from sqlmodel import Session, select as sql_select
 
 from apt_scrape.enrichment import enrich_post_dates, enrich_with_details
 from apt_scrape.server import browser
-from apt_scrape.sites import SearchFilters, get_adapter, list_adapters
+from apt_scrape.sites import SearchFilters, get_adapter, get_adapter_with_overrides, list_adapters
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +70,18 @@ async def run_config_job(
     try:
         with Session(engine) as session:
             cfg = session.get(SearchConfig, config_id)
-            source = list_adapters()[0]
-            adapter = get_adapter(source)
+            site_id = getattr(cfg, "site_id", None) or "immobiliare"
+            from backend.db import SiteConfigOverride
+            from backend.routers.sites import resolve_base_site_id
+            base_site_id = resolve_base_site_id(site_id)
+            if base_site_id not in list_adapters():
+                base_site_id = list_adapters()[0]
+                site_id = base_site_id
+            overrides = {}
+            row = session.get(SiteConfigOverride, site_id)
+            if row and row.overrides:
+                overrides = json.loads(row.overrides) if isinstance(row.overrides, str) else (row.overrides or {})
+            adapter = get_adapter_with_overrides(base_site_id, overrides if overrides else None)
             city_slug = _normalize_slug(cfg.city)
             area_slug = _normalize_slug(cfg.area) if cfg.area else None
             property_types = _parse_property_types(cfg.property_type)
@@ -85,11 +96,21 @@ async def run_config_job(
             min_sqm = cfg.min_sqm
             min_rooms = cfg.min_rooms
             operation = cfg.operation
+            request_delay = getattr(cfg, "request_delay_sec", 2.0)
+            page_delay = getattr(cfg, "page_delay_sec", 0.0)
+            # Per-site rate limit: overrides can set requests_per_minute (e.g. 15)
+            rpm = overrides.get("requests_per_minute")
+            if rpm is not None and float(rpm) > 0:
+                min_delay = 60.0 / float(rpm)
+                request_delay = max(request_delay, min_delay)
+                _log(f"Site rate limit: {rpm} req/min → delay {request_delay:.1f}s between search requests")
 
         # 2. Scrape search pages
         all_listings: list[dict] = []
         for pt in property_types:
             for page_num in range(start_page, end_page + 1):
+                if page_num > start_page and page_delay > 0:
+                    await asyncio.sleep(page_delay)
                 filters = SearchFilters(
                     city=city_slug, area=area_slug, operation=operation,
                     property_type=pt, min_price=min_price, max_price=max_price,
@@ -98,6 +119,8 @@ async def run_config_job(
                 url = adapter.build_search_url(filters)
                 _log(f"Fetching {pt} page {page_num}: {url}")
                 html = await browser.fetch_page(url, wait_selector=adapter.config.search_wait_selector)
+                if request_delay > 0:
+                    await asyncio.sleep(request_delay)
                 page_listings = adapter.parse_search(html)
                 if not page_listings:
                     _log(f"No listings on page {page_num}, stopping.")

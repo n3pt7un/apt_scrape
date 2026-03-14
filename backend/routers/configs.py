@@ -13,6 +13,14 @@ from backend import scheduler
 router = APIRouter()
 
 
+def _validate_site_id(site_id: str) -> None:
+    from backend.routers.sites import resolve_base_site_id
+    from apt_scrape.sites import list_adapters
+    base = resolve_base_site_id(site_id)
+    if base not in list_adapters():
+        raise HTTPException(422, f"Invalid site_id. Base must be one of: {list_adapters()}")
+
+
 class ConfigIn(BaseModel):
     name: str
     city: str
@@ -32,6 +40,10 @@ class ConfigIn(BaseModel):
     auto_analyse: bool = True
     auto_notion_push: bool = False
     enabled: bool = True
+    site_id: str = "immobiliare"
+    request_delay_sec: float = 2.0
+    page_delay_sec: float = 0.0
+    timeout_sec: Optional[int] = None
 
 
 def _to_response(cfg: SearchConfig) -> dict:
@@ -45,8 +57,16 @@ def list_configs(session: Session = Depends(get_session)):
     return [_to_response(c) for c in session.exec(select(SearchConfig)).all()]
 
 
+@router.get("/sites")
+def list_config_sites(session: Session = Depends(get_session)):
+    """Return base and variant site IDs for the site selectbox (e.g. immobiliare, immobiliare-test1)."""
+    from backend.routers.sites import get_sites_list
+    return get_sites_list(session)
+
+
 @router.post("", status_code=201)
 def create_config(data: ConfigIn, session: Session = Depends(get_session)):
+    _validate_site_id(data.site_id)
     cfg = SearchConfig(**{**data.model_dump(), "schedule_days": json.dumps(data.schedule_days)})
     session.add(cfg)
     session.commit()
@@ -65,6 +85,7 @@ def get_config(config_id: int, session: Session = Depends(get_session)):
 
 @router.put("/{config_id}")
 def update_config(config_id: int, data: ConfigIn, session: Session = Depends(get_session)):
+    _validate_site_id(data.site_id)
     cfg = session.get(SearchConfig, config_id)
     if not cfg:
         raise HTTPException(404, "Config not found")

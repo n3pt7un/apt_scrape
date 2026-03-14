@@ -15,6 +15,7 @@ from .base import (
     SearchFilters,
     SearchSelectors,
     SiteAdapter,
+    SiteConfig,
     Tag,
     classify_feature,
     extract_attr,
@@ -35,8 +36,10 @@ class ImmobiliareAdapter(SiteAdapter):
     address assembly, and dedicated cost-section extraction.
     """
 
-    def __init__(self) -> None:
-        super().__init__(load_config_from_yaml(_CONFIG_PATH))
+    def __init__(self, config: SiteConfig | None = None) -> None:
+        if config is None:
+            config = load_config_from_yaml(_CONFIG_PATH)
+        super().__init__(config)
 
     def build_search_url(self, filters: SearchFilters) -> str:
         """Build an Immobiliare search URL with site-specific sort handling.

@@ -123,7 +123,48 @@ Submit: “Save” (create) or “Update” (edit). Cancel (edit only): clears `
 
 ---
 
-## 8. Documentation
+## 8. Per-site config overrides (areas, selectors, wait selectors)
+
+Users can experiment with **per-site** parameters: available areas, search/detail wait selectors, and optionally selector groups (e.g. `search_selectors.listing_card`). These are stored as **overrides** merged on top of the built-in YAML config at runtime.
+
+### 8.1 Exception to "don't modify apt_scrape"
+
+To support overrides without duplicating parsing logic, **apt_scrape** gets a small, backward-compatible extension:
+
+- **config_from_dict(d: dict) -> SiteConfig** — Build a `SiteConfig` from a nested dict (same structure as YAML). Extract from current `load_config_from_yaml` so it becomes `config_from_dict(yaml.safe_load(open(path)))`.
+- **config_to_dict(config: SiteConfig) -> dict** — Serialize `SiteConfig` to a nested dict (selector groups as lists of strings). Used so the backend can return effective config and the UI can show/edit overrides.
+- **deep_merge(base: dict, overrides: dict) -> dict** — Recursively merge `overrides` into `base` (overrides win; lists in overrides replace lists in base for selector lists).
+- **get_adapter_with_overrides(site_id: str, overrides: dict | None = None) -> SiteAdapter** — If `overrides` is None/empty, return the same as `get_adapter(site_id)`. Otherwise load the base config dict for that site (from existing YAML path), merge overrides, build `SiteConfig` with `config_from_dict(merged)`, and return a new adapter instance of the same class with that config. Requires a mapping `site_id -> (adapter_class, config_path)` in `apt_scrape/sites/__init__.py`.
+
+No change to adapter behavior when overrides are not used.
+
+### 8.2 Backend storage and API
+
+- **New table:** `site_config_overrides`: one row per `site_id`, JSON column `overrides` (e.g. `{"search_wait_selector": "article", "areas": ["bicocca", "niguarda"], "search_selectors": {"listing_card": ["div.new-card"]}}`). Empty overrides = use built-in config only.
+- **Endpoints:**
+  - **GET /sites** — List site IDs (from `list_adapters()`).
+  - **GET /sites/{site_id}/config** — Return effective config (built-in + stored overrides merged). Same shape as `config_to_dict()`. Optionally split into `base` (read-only) and `overrides` (editable).
+  - **GET /sites/{site_id}/areas** — Return available areas for that site: from overrides `areas` if set, else from site built-in config if it has `area_map` or `areas`, else [].
+  - **PUT /sites/{site_id}/config** — Body: partial overrides. Merge into stored overrides; only keys sent are updated. Send `null` or [] to clear a key.
+
+### 8.3 Runner
+
+When resolving the adapter for a job's `site_id`, load stored overrides for that site (if any) and call `get_adapter_with_overrides(site_id, overrides)` instead of `get_adapter(site_id)`.
+
+### 8.4 Frontend: Site settings page
+
+- **New page:** e.g. **5_Site_Settings.py** ("Site settings" in sidebar).
+- User selects a **site** (dropdown from GET /sites).
+- Show effective config: **areas** (editable list: one per line or multi-input), **search_wait_selector**, **detail_wait_selector**. Optionally **search_selectors** / **detail_selectors** in an Advanced section (nested keys; each value = list of CSS selector strings).
+- **Save** → PUT /sites/{site_id}/config with the overrides. Area dropdown in Search Configs (when that site is selected) then reflects new areas.
+
+### 8.5 Search Configs area dropdown
+
+When the user selects a **site** in the Search Configs form, the **area** field is populated from GET /sites/{site_id}/areas: selectbox from that list, plus option for custom/free text if desired. If list is empty, keep current behavior (free text or existing presets).
+
+---
+
+## 9. Documentation
 
 - Update `docs/running-locally.md` if any new env or run steps.
-- In `README` or docs, briefly mention “Search Configs: site selection and rate limits (request delay, page delay) per config.”
+- In `README` or docs, briefly mention: Search Configs (site selection, rate limits); Site settings (per-site areas and selectors for experimentation).

@@ -1,0 +1,14 @@
+# Fallback default areas (used when no per-site file exists).
+# Prefer per-site files: default_areas_immobiliare.txt, default_areas_casa.txt, default_areas_idealista.txt
+# Keep in sync with AREAS in scrape_multiple_areas*.sh
+bicocca
+niguarda
+precotto
+loreto
+citta-studi
+lambrate
+turro
+greco-segnano
+crescenzago
+centrale
+pasteur-rovereto

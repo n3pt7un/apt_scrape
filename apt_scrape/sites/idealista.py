@@ -24,6 +24,7 @@ from .base import (
     SearchFilters,
     SearchSelectors,
     SiteAdapter,
+    SiteConfig,
     Tag,
     classify_feature,
     extract_attr,
@@ -42,13 +43,13 @@ class IdealistaAdapter(SiteAdapter):
     encoding (e.g. ``/con-prezzo_1200,dimensione_40/``).
     """
 
-    def __init__(self) -> None:
-        super().__init__(load_config_from_yaml(_CONFIG_PATH))
-        
+    def __init__(self, config: SiteConfig | None = None) -> None:
+        if config is None:
+            config = load_config_from_yaml(_CONFIG_PATH)
+        super().__init__(config)
         # Load extra config fields not in SiteConfig
         with open(_CONFIG_PATH, encoding="utf-8") as fh:
             raw_config = yaml.safe_load(fh)
-        
         self.path_filter_map = raw_config.get("path_filter_map", {})
         self.room_filter_map = raw_config.get("room_filter_map", {})
         self.sort_map = raw_config.get("sort_map", {})
