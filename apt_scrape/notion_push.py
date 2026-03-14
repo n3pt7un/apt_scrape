@@ -232,10 +232,10 @@ async def push_listings(listings: list[dict]) -> None:
     Adds notion_page_id, notion_page_url, notion_skipped to each listing dict.
     Reads DB IDs from env vars. Deduplicates by Listing URL.
     """
-    api_key = os.environ.get("NOTION_API_KEY") or "dummy-key-for-testing"
-    apartments_db_id = os.environ.get("NOTION_APARTMENTS_DB_ID") or "dummy-db-id-for-testing"
-    areas_db_id = os.environ.get("NOTION_AREAS_DB_ID") or "dummy-areas-db-id"
-    agencies_db_id = os.environ.get("NOTION_AGENCIES_DB_ID") or "dummy-agencies-db-id"
+    api_key = os.environ.get("NOTION_API_KEY", "")
+    apartments_db_id = os.environ.get("NOTION_APARTMENTS_DB_ID", "")
+    areas_db_id = os.environ.get("NOTION_AREAS_DB_ID", "")
+    agencies_db_id = os.environ.get("NOTION_AGENCIES_DB_ID", "")
 
     area_cache: dict[str, Optional[str]] = {}
     agency_cache: dict[str, Optional[str]] = {}
