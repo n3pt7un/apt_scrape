@@ -13,6 +13,7 @@ router = APIRouter()
 @router.get("")
 def list_listings(
     config_id: Optional[int] = Query(None),
+    job_id: Optional[int] = Query(None),
     min_score: Optional[int] = Query(None),
     max_score: Optional[int] = Query(None),
     search: Optional[str] = Query(None),
@@ -23,6 +24,8 @@ def list_listings(
     stmt = select(Listing).order_by(Listing.scraped_at.desc())
     if config_id is not None:
         stmt = stmt.where(Listing.config_id == config_id)
+    if job_id is not None:
+        stmt = stmt.where(Listing.job_id == job_id)
     if min_score is not None:
         stmt = stmt.where(Listing.ai_score >= min_score)
     if max_score is not None:
