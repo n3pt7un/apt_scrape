@@ -67,3 +67,79 @@ def test_filter_by_job_id():
     ids = [l["id"] for l in resp.json()]
     assert lst_a_id in ids
     assert lst_b_id not in ids
+
+
+def test_notion_push_empty_ids():
+    """Returns 400 when listing_ids is empty."""
+    resp = client.post("/listings/notion-push", json={"listing_ids": []})
+    assert resp.status_code == 400
+
+
+def test_notion_push_missing_credentials(monkeypatch):
+    """Returns 503 when NOTION_API_KEY is not set."""
+    monkeypatch.delenv("NOTION_API_KEY", raising=False)
+    monkeypatch.delenv("NOTION_APARTMENTS_DB_ID", raising=False)
+    resp = client.post("/listings/notion-push", json={"listing_ids": [1]})
+    assert resp.status_code == 503
+    assert "credentials" in resp.json()["detail"].lower()
+
+
+def test_notion_push_success(monkeypatch):
+    """Returns pushed/skipped counts; updates notion_page_id in DB."""
+    cfg_id, job_a_id, job_b_id, lst_a_id, lst_b_id = _seed()
+
+    async def fake_mark_duplicates(listings):
+        return 0  # no duplicates
+
+    async def fake_push(listings):
+        for lst in listings:
+            lst["notion_page_id"] = "fake-page-id-123"
+            lst["notion_skipped"] = False
+
+    monkeypatch.setenv("NOTION_API_KEY", "fake-key")
+    monkeypatch.setenv("NOTION_APARTMENTS_DB_ID", "fake-db-id")
+    # Patch at the import site used by the endpoint (module-level imports in listings.py)
+    monkeypatch.setattr("backend.routers.listings.mark_notion_duplicates", fake_mark_duplicates)
+    monkeypatch.setattr("backend.routers.listings.push_listings", fake_push)
+
+    resp = client.post("/listings/notion-push", json={"listing_ids": [lst_a_id]})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pushed"] == 1
+    assert data["skipped"] == 0
+    assert data["errors"] == []
+
+    # Verify notion_page_id written back to DB
+    with Session(engine) as s:
+        updated = s.get(Listing, lst_a_id)
+        assert updated.notion_page_id == "fake-page-id-123"
+
+
+def test_notion_push_skips_duplicates(monkeypatch):
+    """Skipped listings (already in Notion) get their notion_page_id backfilled."""
+    cfg_id, job_a_id, job_b_id, lst_a_id, lst_b_id = _seed()
+
+    async def fake_mark_duplicates(listings):
+        for lst in listings:
+            lst["notion_skipped"] = True
+            lst["notion_page_id"] = "existing-page-id"
+        return len(listings)
+
+    async def fake_push(listings):
+        pass  # nothing to push
+
+    monkeypatch.setenv("NOTION_API_KEY", "fake-key")
+    monkeypatch.setenv("NOTION_APARTMENTS_DB_ID", "fake-db-id")
+    monkeypatch.setattr("backend.routers.listings.mark_notion_duplicates", fake_mark_duplicates)
+    monkeypatch.setattr("backend.routers.listings.push_listings", fake_push)
+
+    resp = client.post("/listings/notion-push", json={"listing_ids": [lst_b_id]})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pushed"] == 0
+    assert data["skipped"] == 1
+
+    # notion_page_id backfilled for skipped listing
+    with Session(engine) as s:
+        updated = s.get(Listing, lst_b_id)
+        assert updated.notion_page_id == "existing-page-id"
