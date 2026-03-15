@@ -1,4 +1,4 @@
-"""backend.routers.listings — Read-only listing queries."""
+"""backend.routers.listings — Listing queries and Notion push operations."""
 import json as _json_mod
 import os
 from typing import Optional
@@ -111,6 +111,8 @@ async def notion_push(
     # 2. Push non-skipped
     to_push = [d for d in listing_dicts if not d.get("notion_skipped")]
     errors: list[str] = []
+    # errors captures only a top-level push failure (push_listings raises on error).
+    # Per-listing failures inside push_listings are handled internally by that function.
     if to_push:
         try:
             await push_listings(to_push)

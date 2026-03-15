@@ -143,3 +143,15 @@ def test_notion_push_skips_duplicates(monkeypatch):
     with Session(engine) as s:
         updated = s.get(Listing, lst_b_id)
         assert updated.notion_page_id == "existing-page-id"
+
+
+def test_notion_push_all_ids_not_found(monkeypatch):
+    """Returns 200 with all-zeros when none of the requested IDs exist in DB."""
+    monkeypatch.setenv("NOTION_API_KEY", "fake-key")
+    monkeypatch.setenv("NOTION_APARTMENTS_DB_ID", "fake-db-id")
+    resp = client.post("/listings/notion-push", json={"listing_ids": [999999, 888888]})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pushed"] == 0
+    assert data["skipped"] == 0
+    assert data["errors"] == []
