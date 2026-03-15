@@ -89,7 +89,7 @@ def render(jobs):
                 f"`{job['status']}` · {listings_str} · {finished}"
             )
             with st.expander(label, expanded=False):
-                c_del, c_content = st.columns([1, 5])
+                c_del, c_notion, c_content = st.columns([1, 1, 4])
                 with c_del:
                     if st.button("Delete", key=f"del_rec_{job['id']}", use_container_width=True):
                         try:
@@ -97,6 +97,30 @@ def render(jobs):
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error: {e}")
+                with c_notion:
+                    if job["status"] == "done" and st.button("Push to Notion", key=f"notion_{job['id']}", use_container_width=True):
+                        try:
+                            job_listings = api.get(
+                                "/listings",
+                                params={"job_id": job["id"], "limit": 1000},
+                            )
+                            if not job_listings:
+                                st.warning("No listings found for this job.")
+                            else:
+                                listing_ids = [l["id"] for l in job_listings]
+                                result = api.post(
+                                    "/listings/notion-push",
+                                    json={"listing_ids": listing_ids},
+                                )
+                                st.success(
+                                    f"Notion push complete: {result['pushed']} pushed, "
+                                    f"{result['skipped']} already in Notion."
+                                )
+                                if result.get("errors"):
+                                    st.error(f"Errors: {result['errors']}")
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Push failed: {e}")
                 with c_content:
                     if job["status"] == "done":
                         try:
