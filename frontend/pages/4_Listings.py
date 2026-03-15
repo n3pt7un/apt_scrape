@@ -109,7 +109,7 @@ selected_rows = event.selection.rows if hasattr(event, "selection") else []
 
 if len(selected_rows) > 1:
     selected_ids = [listings[i]["id"] for i in selected_rows]
-    if st.button(f"Push {len(selected_ids)} listing(s) to Notion", type="primary"):
+    if st.button(f"Push {len(selected_ids)} listing(s) to Notion", type="primary", key="bulk_push_notion"):
         try:
             result = api.post("/listings/notion-push", json={"listing_ids": selected_ids})
             st.success(
