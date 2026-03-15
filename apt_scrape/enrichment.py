@@ -107,6 +107,7 @@ async def enrich_with_details(
                     listing_url,
                     wait_selector=listing_adapter.config.detail_wait_selector,
                     stagger_secs=slot * _STAGGER_SECONDS,
+                    wait_until=getattr(listing_adapter.config, "page_load_wait", "domcontentloaded"),
                 )
                 detail = listing_adapter.parse_detail(detail_html, listing_url).to_dict()
                 listing["detail"] = detail
@@ -200,6 +201,7 @@ async def enrich_post_dates(
                     listing_url,
                     wait_selector=listing_adapter.config.detail_wait_selector,
                     stagger_secs=slot * _STAGGER_SECONDS,
+                    wait_until=getattr(listing_adapter.config, "page_load_wait", "domcontentloaded"),
                 )
                 post_date = listing_adapter.extract_post_date_from_detail_html(detail_html)
                 listing["post_date"] = post_date

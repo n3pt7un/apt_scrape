@@ -10,13 +10,28 @@ DB_PATH = os.getenv("DB_PATH", "data/app.db")
 
 if DB_PATH == ":memory:":
     from sqlalchemy.pool import StaticPool
+    # check_same_thread=False is required for FastAPI, as it can pass connections
+    # across threads (e.g., when routing sync endpoints in a threadpool).
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
 else:
-    engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+    # Use MEMORY journal mode to avoid journal files on mounted filesystems
+    # (APFS/FUSE mounts can't reliably delete the .db-journal file).
+    # Note: check_same_thread=False allows FastAPI's threadpool to share connections.
+    engine = create_engine(
+        f"sqlite:///{DB_PATH}",
+        echo=False,
+        connect_args={"check_same_thread": False},
+    )
+    from sqlalchemy import event
+    @event.listens_for(engine, "connect")
+    def set_journal_mode(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=MEMORY")
+        cursor.close()
 
 
 class SearchConfig(SQLModel, table=True):

@@ -319,6 +319,9 @@ class SiteConfig:
     detail_selectors: DetailSelectors
     property_type_map: dict[str, str] = field(default_factory=dict)
     operation_map: dict[str, str] = field(default_factory=dict)
+    # Playwright wait_until strategy for page.goto().
+    # Use "networkidle" for sites that decode/hydrate content via JS after load.
+    page_load_wait: str = "domcontentloaded"
 
 
 # ---------------------------------------------------------------------------
@@ -450,6 +453,7 @@ def config_from_dict(d: dict[str, Any]) -> SiteConfig:
         detail_wait_selector=d.get("detail_wait_selector", "h1"),
         property_type_map=d.get("property_type_map", {}),
         operation_map=d.get("operation_map", {}),
+        page_load_wait=d.get("page_load_wait", "domcontentloaded"),
         search_selectors=SearchSelectors(
             listing_card=_sg(ss["listing_card"]),
             title=_sg(ss["title"]),
@@ -494,6 +498,7 @@ def config_to_dict(config: SiteConfig) -> dict[str, Any]:
         "detail_wait_selector": config.detail_wait_selector,
         "property_type_map": config.property_type_map,
         "operation_map": config.operation_map,
+        "page_load_wait": config.page_load_wait,
         "search_selectors": {
             "listing_card": sg_to_list(ss.listing_card),
             "title": sg_to_list(ss.title),
@@ -663,6 +668,23 @@ class SiteAdapter(ABC):
         sels = self.config.search_selectors
         cards = sels.listing_card.find_all(soup)
         listings: list[ListingSummary] = []
+
+        if not cards:
+            # Diagnostic: log page title, meta robots, and body class to help diagnose
+            # wrong selectors, CAPTCHAs, or redirects.
+            title_tag = soup.find("title")
+            body_tag = soup.find("body")
+            body_class = body_tag.get("class", []) if body_tag else []
+            # Capture first ~600 chars of visible body text as a hint
+            body_text = body_tag.get_text(" ", strip=True)[:600] if body_tag else ""
+            logger.warning(
+                "DIAG [%s] 0 cards with selector %r — page title=%r body_class=%r body_text=%r",
+                self.config.site_id,
+                list(sels.listing_card.selectors),
+                title_tag.get_text(strip=True) if title_tag else "",
+                body_class,
+                body_text,
+            )
 
         for card in cards:
             try:

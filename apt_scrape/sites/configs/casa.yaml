@@ -18,6 +18,10 @@ query_param_map:
   max_rooms: numLocaliMax
 
 page_param: page
+# Casa.it encodes the initial page body as a binary blob that JS decodes at runtime.
+# Using "networkidle" ensures we wait for all network activity (including JS hydration)
+# to settle before capturing the HTML — otherwise we get garbled/binary content.
+page_load_wait: networkidle
 search_wait_selector: "[class*='csaSrpcard__cnt-card']"
 detail_wait_selector: "h1[class*='csapdp-infos__tit']"
 

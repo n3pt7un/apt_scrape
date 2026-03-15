@@ -123,6 +123,7 @@ async def run_config_job(
         all_listings: list[dict] = []
         for area_slug in area_slugs:
             for pt in property_types:
+                seen_in_run: set[str] = set()  # track URLs within this area/pt run to detect redirect loops
                 for page_num in range(start_page, end_page + 1):
                     if page_num > start_page and page_delay > 0:
                         await asyncio.sleep(page_delay)
@@ -134,20 +135,30 @@ async def run_config_job(
                     url = adapter.build_search_url(filters)
                     a_name = f" (area: {area_slug})" if area_slug else ""
                     _log(f"Fetching {pt}{a_name} page {page_num}: {url}")
-                    html = await browser.fetch_page(url, wait_selector=adapter.config.search_wait_selector)
+                    page_load_wait = getattr(adapter.config, "page_load_wait", "domcontentloaded")
+                    html = await browser.fetch_page(url, wait_selector=adapter.config.search_wait_selector, wait_until=page_load_wait)
                     if request_delay > 0:
                         await asyncio.sleep(request_delay)
                     page_listings = adapter.parse_search(html)
                     if not page_listings:
                         _log(f"No listings on page {page_num}, stopping.")
                         break
-                    
+
+                    # Detect redirect loops: stop if all listings on this page were
+                    # already seen in a previous page (site redirected to last valid page)
+                    page_urls = {str(ls.url).strip() for ls in page_listings if ls.url}
+                    new_urls = page_urls - seen_in_run
+                    if not new_urls and seen_in_run:
+                        _log(f"  -> Page {page_num} is a duplicate of a previous page (redirect detected), stopping.")
+                        break
+                    seen_in_run |= page_urls
+
                     for ls in page_listings:
                         l_dict = ls.to_dict()
                         l_dict["_search_area"] = area_slug or ""
                         all_listings.append(l_dict)
-                        
-                    _log(f"  -> {len(page_listings)} listings")
+
+                    _log(f"  -> {len(page_listings)} listings ({len(new_urls)} new)")
 
         # Deduplicate by URL
         scraped_count = len(all_listings)

@@ -276,7 +276,12 @@ class BrowserManager:
                 await asyncio.sleep(REQUEST_DELAY_SECONDS - elapsed)
             self._last_request_time = time.monotonic()
 
-    async def fetch_page(self, url: str, wait_selector: str | None = None) -> str:
+    async def fetch_page(
+        self,
+        url: str,
+        wait_selector: str | None = None,
+        wait_until: str = "domcontentloaded",
+    ) -> str:
         """Fetch *url* via the stealth browser and return raw HTML.
 
         Handles proactive proxy rotation (every N requests) and reactive
@@ -285,6 +290,9 @@ class BrowserManager:
         Args:
             url: Page URL to fetch.
             wait_selector: Optional CSS selector to wait for after page load.
+            wait_until: Playwright navigation wait event — ``"domcontentloaded"``
+                (default, fast), ``"load"``, or ``"networkidle"`` (waits for JS
+                hydration to complete; use for sites with client-decoded content).
 
         Returns:
             Raw HTML string of the rendered page.
@@ -303,14 +311,14 @@ class BrowserManager:
             await self.rotate_proxy()
 
         try:
-            html = await self._fetch_once(url, wait_selector)
+            html = await self._fetch_once(url, wait_selector, wait_until)
         except Exception as exc:
             err_str = str(exc).lower()
             if "targetclosederror" in str(type(exc)).lower() or "closed=true" in err_str or "handler is closed" in err_str:
                 logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
                 await self.close()
                 await self._ensure_browser()
-                html = await self._fetch_once(url, wait_selector)
+                html = await self._fetch_once(url, wait_selector, wait_until)
             elif not self._proxy_list:
                 raise
             else:
@@ -327,7 +335,7 @@ class BrowserManager:
                 await self.rotate_proxy()
                 await asyncio.sleep(3)
                 try:
-                    html = await self._fetch_once(url, wait_selector)
+                    html = await self._fetch_once(url, wait_selector, wait_until)
                 except Exception as exc:
                     logger.warning("Fetch error after rotation (attempt %d): %s", attempt + 1, exc)
                     html = None
@@ -346,6 +354,7 @@ class BrowserManager:
         url: str,
         wait_selector: str | None = None,
         stagger_secs: float = 0.0,
+        wait_until: str = "domcontentloaded",
     ) -> str:
         """Fetch *url* without the per-request rate limiter, suitable for use
         inside ``asyncio.gather`` batches.
@@ -361,6 +370,9 @@ class BrowserManager:
             stagger_secs: Seconds to sleep before starting the fetch.  Pass
                 ``slot_index * STAGGER_SECONDS`` so each slot in a batch
                 starts slightly after the previous one.
+            wait_until: Playwright navigation wait event (default
+                ``"domcontentloaded"``).  Pass ``"networkidle"`` for sites that
+                require JS hydration before content is readable.
 
         Returns:
             Raw HTML string of the rendered page.
@@ -373,14 +385,14 @@ class BrowserManager:
         await self._ensure_browser()
 
         try:
-            html = await self._fetch_once(url, wait_selector)
+            html = await self._fetch_once(url, wait_selector, wait_until)
         except Exception as exc:
             err_str = str(exc).lower()
             if "targetclosederror" in str(type(exc)).lower() or "closed=true" in err_str or "handler is closed" in err_str:
                 logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
                 await self.close()
                 await self._ensure_browser()
-                html = await self._fetch_once(url, wait_selector)
+                html = await self._fetch_once(url, wait_selector, wait_until)
             elif not self._proxy_list:
                 raise
             else:
@@ -396,7 +408,7 @@ class BrowserManager:
                 await self.rotate_proxy()
                 await asyncio.sleep(3)
                 try:
-                    html = await self._fetch_once(url, wait_selector)
+                    html = await self._fetch_once(url, wait_selector, wait_until)
                 except Exception as exc:
                     logger.warning("Fetch error after rotation (attempt %d): %s", attempt + 1, exc)
                     html = None
@@ -410,12 +422,19 @@ class BrowserManager:
         self._requests_since_rotation += 1
         return html
 
-    async def _fetch_once(self, url: str, wait_selector: str | None) -> str:
+    async def _fetch_once(
+        self,
+        url: str,
+        wait_selector: str | None,
+        wait_until: str = "domcontentloaded",
+    ) -> str:
         """Open *url* in a new page and return its rendered HTML.
 
         Args:
             url: URL to navigate to.
             wait_selector: CSS selector to wait for before capturing content.
+            wait_until: Playwright ``page.goto`` wait event.  Use
+                ``"networkidle"`` for JS-hydrated pages (e.g. Casa.it).
 
         Returns:
             Raw HTML string.
@@ -426,17 +445,27 @@ class BrowserManager:
         page = await self._context.new_page()
         try:
             logger.info("Fetching: %s", url)
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            # networkidle can take noticeably longer on JS-heavy pages; allow 45 s.
+            goto_timeout = 45000 if wait_until == "networkidle" else 30000
+            await page.goto(url, wait_until=wait_until, timeout=goto_timeout)
 
             if wait_selector:
                 try:
-                    await page.wait_for_selector(wait_selector, timeout=10000)
+                    await page.wait_for_selector(wait_selector, timeout=15000)
                 except Exception as exc:
                     logger.warning(
                         "Selector '%s' not found, using page as-is: %s",
                         wait_selector,
                         exc,
                     )
+                    # Diagnostic: log page title and first 800 chars of HTML
+                    try:
+                        page_title = await page.title()
+                        html_snippet = await page.evaluate("document.documentElement.outerHTML.slice(0, 800)")
+                        logger.warning("DIAG page title: %r", page_title)
+                        logger.warning("DIAG html snippet: %s", html_snippet)
+                    except Exception as diag_exc:
+                        logger.warning("DIAG failed to capture snippet: %s", diag_exc)
 
             await asyncio.sleep(1.5)
             return await page.content()
