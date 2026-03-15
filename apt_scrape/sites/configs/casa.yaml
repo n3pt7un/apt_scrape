@@ -3,53 +3,62 @@ display_name: Casa.it
 base_url: https://www.casa.it
 domain_pattern: 'casa\.it'
 
-# URL pattern: /affitto/residenziale/milano/{zone-slug}/?prezzoMax=X&prezzoMin=Y&...
-# The base adapter appends the area slug after the city in the path.
-# CasaAdapter.build_search_url translates our slug into the zone path first.
-search_path_template: "/{operation}/residenziale/{city}/"
+# Casa.it uses a single search endpoint /srp/ with all params as query strings.
+# Location is identified by a zone hash in the `q=` parameter.
+# Old path-based URLs (/affitto/residenziale/milano/...) do NOT apply filters —
+# only the /srp/ endpoint with proper params works for filtered searches.
+search_path_template: "/srp/"  # build_search_url in CasaAdapter overrides this fully
 
-# Query parameter names (camelCase — verified 2026-03-15)
+# Hash for the entire Milano municipality (used when no area is specified).
+city_hash: "9f6485c2"
+
+# Query parameter names (verified 2026-03-15 against /srp/ endpoint)
 query_param_map:
-  min_price: prezzoMin
-  max_price: prezzoMax
-  min_sqm: superficieMin
-  max_sqm: superficieMax
-  min_rooms: numLocaliMin
-  max_rooms: numLocaliMax
+  min_price: priceMin
+  max_price: priceMax
+  min_sqm: mqMin
+  max_sqm: mqMax
+  min_rooms: numRoomsMin
+  max_rooms: numRoomsMax
 
 page_param: page
-# Casa.it encodes the initial page body as a binary blob that JS decodes at runtime.
-# Using "networkidle" ensures we wait for all network activity (including JS hydration)
-# to settle before capturing the HTML — otherwise we get garbled/binary content.
-page_load_wait: networkidle
+
+# Casa.it's /srp/ page is a React SPA that hydrates listings client-side.
+# domcontentloaded fires quickly; we then wait up to 45 s for the card
+# selector to appear (React hydration in headless Firefox can take 20-40 s).
+page_load_wait: domcontentloaded
+search_wait_timeout: 45000
 search_wait_selector: "[class*='csaSrpcard__cnt-card']"
 detail_wait_selector: "h1[class*='csapdp-infos__tit']"
 
-property_type_map:
-  case: residenziale
-  appartamenti: residenziale
-  attici: residenziale
-  ville: residenziale
-  villette: residenziale
-
+# `tr=` parameter values for operation
 operation_map:
-  affitto: affitto
+  affitto: affitti
   vendita: vendita
 
-# Area slug → Casa.it zone path segment.
-# Casa.it groups neighbourhoods into macro-zones; multiple of our slugs
-# can map to the same zone path (verified 2026-03-15).
-area_map:
-  bicocca: bicocca-ca-granda-parco-nord      # Bicocca, Ca' Granda, Parco Nord
-  niguarda: bicocca-ca-granda-parco-nord     # Niguarda falls in same Casa.it zone
-  precotto: gorla-greco-precotto             # Gorla, Greco, Precotto
-  turro: gorla-greco-precotto               # Turro also in this zone
-  greco-segnano: gorla-greco-precotto       # Greco/Segnano also in this zone
-  citta-studi: citta-studi-corsica-susa     # Città Studi, Corsica, Susa
-  lambrate: lambrate
-  crescenzago: adriano-crescenzago-parco-lambro-cimiano
-  centrale: centrale-repubblica
+property_type_map:
+  case: case
+  appartamenti: appartamenti
+  attici: attici
+  ville: ville
+  villette: villette
 
+# Area slug → Casa.it zone hash for the /srp/?q= parameter.
+# Hashes extracted 2026-03-15 from the zone picker on casa.it/srp/.
+# Multiple slugs can share the same hash when they fall in the same macro-zone.
+area_map:
+  bicocca: "85ba3e0b"        # Bicocca, Ca' Granda, Parco Nord
+  niguarda: "85ba3e0b"       # Niguarda is in the Bicocca/Ca' Granda/Parco Nord zone
+  precotto: "82c10d65"       # Gorla, Greco, Precotto
+  turro: "82c10d65"          # Turro also in Gorla/Greco/Precotto zone
+  greco-segnano: "82c10d65"  # Greco/Segnano also in same zone
+  loreto: "e4a6b323"         # Casoretto-NoLo (closest zone to Loreto/Via Padova)
+  citta-studi: "f5d3d07b"    # Città Studi, Corsica, Susa
+  lambrate: "3ef40a51"       # Lambrate
+  crescenzago: "ece08626"    # Adriano, Crescenzago, Parco Lambro-Cimiano
+  centrale: "9b4fa6fc"       # Centrale, Repubblica
+
+# Selectors are unchanged — the /srp/ page uses the same CSS classes as before.
 search_selectors:
   listing_card:
     - "[class*='csaSrpcard__cnt-card']"
@@ -60,10 +69,8 @@ search_selectors:
   features:
     - "[class*='csaSrpcard__det__feats__item']"
   address:
-    # Zone name paragraph inside the info section — medium-size utility text
     - "[class*='csaSrpcard__det__infos'] p[class*='tp-s--m']"
   thumbnail:
-    # Direct src (no lazy-loading) inside the gallery slider container
     - "[class*='csaSrpcard__gal__slider__imgcont'] img"
   description:
     - "[class*='csaSrpcard__det__feats__desc']"
@@ -78,7 +85,6 @@ detail_selectors:
     - "[class*='csapdp-infos__price']"
   description:
     - "[class*='descr']"
-  # Characteristics table: li.chars_item > p.chars__lbl (key) + div.chars__cnt (value)
   features_keys:
     - "[class*='chars_item'] [class*='chars__lbl']"
   features_values:
@@ -86,10 +92,8 @@ detail_selectors:
   address:
     - "h1[class*='csapdp-infos__tit']"
   photos:
-    # Listing photos only — /listing/ path excludes agency logos (/logo/)
     - "img[src*='/listing/']"
   energy_class:
-    # Energy class value is in chars__cnt sibling of "Classe energetica" label
     - "[class*='chars_item'] [class*='chars__cnt']"
   agency:
     - "[class*='specific-form'] a[href*='/agenzie/']"

@@ -322,6 +322,9 @@ class SiteConfig:
     # Playwright wait_until strategy for page.goto().
     # Use "networkidle" for sites that decode/hydrate content via JS after load.
     page_load_wait: str = "domcontentloaded"
+    # Milliseconds to wait for search_wait_selector to appear (default 15 s).
+    # Increase for SPAs that take longer to hydrate (e.g. Casa.it ~45 s).
+    search_wait_timeout: int = 15000
 
 
 # ---------------------------------------------------------------------------
@@ -454,6 +457,7 @@ def config_from_dict(d: dict[str, Any]) -> SiteConfig:
         property_type_map=d.get("property_type_map", {}),
         operation_map=d.get("operation_map", {}),
         page_load_wait=d.get("page_load_wait", "domcontentloaded"),
+        search_wait_timeout=d.get("search_wait_timeout", 15000),
         search_selectors=SearchSelectors(
             listing_card=_sg(ss["listing_card"]),
             title=_sg(ss["title"]),
@@ -499,6 +503,7 @@ def config_to_dict(config: SiteConfig) -> dict[str, Any]:
         "property_type_map": config.property_type_map,
         "operation_map": config.operation_map,
         "page_load_wait": config.page_load_wait,
+        "search_wait_timeout": config.search_wait_timeout,
         "search_selectors": {
             "listing_card": sg_to_list(ss.listing_card),
             "title": sg_to_list(ss.title),

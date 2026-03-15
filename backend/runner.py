@@ -136,7 +136,8 @@ async def run_config_job(
                     a_name = f" (area: {area_slug})" if area_slug else ""
                     _log(f"Fetching {pt}{a_name} page {page_num}: {url}")
                     page_load_wait = getattr(adapter.config, "page_load_wait", "domcontentloaded")
-                    html = await browser.fetch_page(url, wait_selector=adapter.config.search_wait_selector, wait_until=page_load_wait)
+                    search_wait_timeout = getattr(adapter.config, "search_wait_timeout", 15000)
+                    html = await browser.fetch_page(url, wait_selector=adapter.config.search_wait_selector, wait_until=page_load_wait, wait_selector_timeout=search_wait_timeout)
                     if request_delay > 0:
                         await asyncio.sleep(request_delay)
                     page_listings = adapter.parse_search(html)

@@ -144,7 +144,9 @@ class BrowserManager:
         logger.info("Starting Camoufox browser...")
         from camoufox.async_api import AsyncCamoufox
 
-        self._camoufox_ctx = AsyncCamoufox(headless=True)
+        headless = os.getenv("BROWSER_HEADLESS", "true").lower() not in ("0", "false", "no")
+        logger.info("Camoufox headless=%s (set BROWSER_HEADLESS=false to show window)", headless)
+        self._camoufox_ctx = AsyncCamoufox(headless=headless)
         self._browser = await self._camoufox_ctx.__aenter__()
         logger.info("Camoufox browser started.")
         await self._ensure_context()
@@ -193,7 +195,16 @@ class BrowserManager:
         )
 
     async def _ensure_context(self) -> None:
-        """Create (or recreate) a browser context, optionally via a local relay."""
+        """Create (or recreate) a browser context, optionally via a local relay.
+
+        We explicitly advertise only ``gzip`` and ``deflate`` in
+        ``Accept-Encoding`` — Brotli (``br``) is omitted intentionally.
+        Some sites (e.g. Casa.it) serve Brotli-compressed responses that
+        Camoufox/Firefox fails to decompress correctly in headless/automated
+        mode, resulting in garbled binary content being rendered.  Dropping
+        ``br`` from the accept list causes the server to fall back to gzip,
+        which Firefox decodes without issue.
+        """
         proxy_kwargs: dict = {}
         if self._proxy_list:
             await self._start_relay()
@@ -201,6 +212,10 @@ class BrowserManager:
                 "server": f"socks5://127.0.0.1:{self._relay_port}"
             }
         self._context = await self._browser.new_context(**proxy_kwargs)
+        # Disable Brotli to avoid garbled-content issues with certain sites.
+        await self._context.set_extra_http_headers(
+            {"Accept-Encoding": "gzip, deflate"}
+        )
 
     @staticmethod
     def _detect_block(html: str) -> bool:
@@ -281,6 +296,7 @@ class BrowserManager:
         url: str,
         wait_selector: str | None = None,
         wait_until: str = "domcontentloaded",
+        wait_selector_timeout: int = 15000,
     ) -> str:
         """Fetch *url* via the stealth browser and return raw HTML.
 
@@ -311,14 +327,14 @@ class BrowserManager:
             await self.rotate_proxy()
 
         try:
-            html = await self._fetch_once(url, wait_selector, wait_until)
+            html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
         except Exception as exc:
             err_str = str(exc).lower()
             if "targetclosederror" in str(type(exc)).lower() or "closed=true" in err_str or "handler is closed" in err_str:
                 logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
                 await self.close()
                 await self._ensure_browser()
-                html = await self._fetch_once(url, wait_selector, wait_until)
+                html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
             elif not self._proxy_list:
                 raise
             else:
@@ -335,7 +351,7 @@ class BrowserManager:
                 await self.rotate_proxy()
                 await asyncio.sleep(3)
                 try:
-                    html = await self._fetch_once(url, wait_selector, wait_until)
+                    html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
                 except Exception as exc:
                     logger.warning("Fetch error after rotation (attempt %d): %s", attempt + 1, exc)
                     html = None
@@ -355,6 +371,7 @@ class BrowserManager:
         wait_selector: str | None = None,
         stagger_secs: float = 0.0,
         wait_until: str = "domcontentloaded",
+        wait_selector_timeout: int = 15000,
     ) -> str:
         """Fetch *url* without the per-request rate limiter, suitable for use
         inside ``asyncio.gather`` batches.
@@ -385,14 +402,14 @@ class BrowserManager:
         await self._ensure_browser()
 
         try:
-            html = await self._fetch_once(url, wait_selector, wait_until)
+            html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
         except Exception as exc:
             err_str = str(exc).lower()
             if "targetclosederror" in str(type(exc)).lower() or "closed=true" in err_str or "handler is closed" in err_str:
                 logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
                 await self.close()
                 await self._ensure_browser()
-                html = await self._fetch_once(url, wait_selector, wait_until)
+                html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
             elif not self._proxy_list:
                 raise
             else:
@@ -408,7 +425,7 @@ class BrowserManager:
                 await self.rotate_proxy()
                 await asyncio.sleep(3)
                 try:
-                    html = await self._fetch_once(url, wait_selector, wait_until)
+                    html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
                 except Exception as exc:
                     logger.warning("Fetch error after rotation (attempt %d): %s", attempt + 1, exc)
                     html = None
@@ -427,6 +444,7 @@ class BrowserManager:
         url: str,
         wait_selector: str | None,
         wait_until: str = "domcontentloaded",
+        wait_selector_timeout: int = 15000,
     ) -> str:
         """Open *url* in a new page and return its rendered HTML.
 
@@ -451,7 +469,7 @@ class BrowserManager:
 
             if wait_selector:
                 try:
-                    await page.wait_for_selector(wait_selector, timeout=15000)
+                    await page.wait_for_selector(wait_selector, timeout=wait_selector_timeout)
                 except Exception as exc:
                     logger.warning(
                         "Selector '%s' not found, using page as-is: %s",
