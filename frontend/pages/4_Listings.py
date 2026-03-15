@@ -150,9 +150,9 @@ if len(selected_rows) == 1:
             st.write(verdict)
         if listing.get("notion_page_id"):
             st.write(f"**Notion:** {listing['notion_page_id']}")
-            st.button("Already in Notion", disabled=True)
+            st.button("Already in Notion", disabled=True, key=f"already_notion_{listing['id']}")
         else:
-            if st.button("Push this listing to Notion"):
+            if st.button("Push this listing to Notion", key=f"push_single_{listing['id']}"):
                 try:
                     result = api.post(
                         "/listings/notion-push",
