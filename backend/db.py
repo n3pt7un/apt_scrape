@@ -54,6 +54,11 @@ class Job(SQLModel, table=True):
     started_at: datetime = Field(default_factory=datetime.utcnow)
     finished_at: Optional[datetime] = None
     listing_count: Optional[int] = None
+    scraped_count: Optional[int] = None       # total listings before dedup
+    dupes_removed: Optional[int] = None       # scraped_count - listing_count
+    ai_tokens_used: Optional[int] = None      # total tokens consumed by AI analysis
+    ai_cost_usd: Optional[float] = None       # estimated cost in USD
+    area_stats: str = "{}"                    # JSON: {area_slug: count}
     log: str = ""
 
 
@@ -98,11 +103,31 @@ def _migrate_searchconfig_20260314() -> None:
         conn.commit()
 
 
+def _migrate_job_stats_20260314() -> None:
+    """Add scraped_count, dupes_removed, ai_tokens_used, ai_cost_usd, area_stats to job table."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        result = conn.execute(text("PRAGMA table_info(job)"))
+        cols = [row[1] for row in result.fetchall()]
+        if "scraped_count" not in cols:
+            conn.execute(text("ALTER TABLE job ADD COLUMN scraped_count INTEGER"))
+        if "dupes_removed" not in cols:
+            conn.execute(text("ALTER TABLE job ADD COLUMN dupes_removed INTEGER"))
+        if "ai_tokens_used" not in cols:
+            conn.execute(text("ALTER TABLE job ADD COLUMN ai_tokens_used INTEGER"))
+        if "ai_cost_usd" not in cols:
+            conn.execute(text("ALTER TABLE job ADD COLUMN ai_cost_usd REAL"))
+        if "area_stats" not in cols:
+            conn.execute(text("ALTER TABLE job ADD COLUMN area_stats TEXT DEFAULT '{}'"))
+        conn.commit()
+
+
 def create_db_and_tables() -> None:
     """Create all tables if they don't exist. Safe to call multiple times."""
     SQLModel.metadata.create_all(engine)
     if DB_PATH != ":memory:":
         _migrate_searchconfig_20260314()
+        _migrate_job_stats_20260314()
 
 
 def get_session():

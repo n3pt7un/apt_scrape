@@ -23,6 +23,37 @@ def cfg_label(config_id):
     return f"{name} (#{config_id})" if name else f"#{config_id}"
 
 
+def _fmt_duration(sec):
+    if sec is None:
+        return "—"
+    sec = int(sec)
+    if sec < 60:
+        return f"{sec}s"
+    return f"{sec // 60}m {sec % 60}s"
+
+
+def _render_job_stats(stats: dict):
+    """Render a compact stats row for a completed job."""
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Found", stats.get("scraped_count") or "—")
+    c2.metric("Unique", stats.get("listing_count") or "—")
+    c3.metric("Dupes", stats.get("dupes_removed") or "—")
+    avg = stats.get("avg_price_eur")
+    c4.metric("Avg price", f"€{avg:,.0f}" if avg else "—")
+    c5.metric("Duration", _fmt_duration(stats.get("duration_sec")))
+
+    area_stats = stats.get("area_stats") or {}
+    if len(area_stats) > 1:
+        st.caption("**By area:** " + "  ·  ".join(
+            f"{a or 'whole city'}: {n}" for a, n in sorted(area_stats.items(), key=lambda x: -x[1])
+        ))
+
+    ai_tokens = stats.get("ai_tokens_used")
+    ai_cost = stats.get("ai_cost_usd")
+    if ai_tokens:
+        st.caption(f"AI: ~{ai_tokens:,} tokens · ${ai_cost:.4f}" if ai_cost else f"AI: ~{ai_tokens:,} tokens")
+
+
 def render(jobs):
     running = [j for j in jobs if j["status"] == "running"]
     recent = [j for j in jobs if j["status"] != "running"]
@@ -58,7 +89,7 @@ def render(jobs):
                 f"`{job['status']}` · {listings_str} · {finished}"
             )
             with st.expander(label, expanded=False):
-                c_del, c_log = st.columns([1, 5])
+                c_del, c_content = st.columns([1, 5])
                 with c_del:
                     if st.button("Delete", key=f"del_rec_{job['id']}", use_container_width=True):
                         try:
@@ -66,7 +97,14 @@ def render(jobs):
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error: {e}")
-                with c_log:
+                with c_content:
+                    if job["status"] == "done":
+                        try:
+                            stats = api.get(f"/jobs/{job['id']}/stats")
+                            _render_job_stats(stats)
+                        except Exception:
+                            pass
+                        st.divider()
                     try:
                         detail = api.get(f"/jobs/{job['id']}")
                         st.code(detail.get("log", "(no log)"), language=None)

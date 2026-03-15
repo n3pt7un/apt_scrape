@@ -40,10 +40,10 @@ def list_listings(
     listings = session.exec(stmt).all()
 
     config_ids = {lst.config_id for lst in listings}
-    configs = {}
-    for cid in config_ids:
-        cfg = session.get(SearchConfig, cid)
-        configs[cid] = cfg.name if cfg else str(cid)
+    configs = {
+        c.id: c.name
+        for c in session.exec(select(SearchConfig).where(SearchConfig.id.in_(config_ids))).all()
+    }
 
     result = []
     for lst in listings:

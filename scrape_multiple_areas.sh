@@ -26,7 +26,9 @@ AREAS=(
   # "bicocca"
   # "niguarda"
   # "precotto"
-  # "loreto"
+  # "loreto"  # defunct on immobiliare.it — redirects to porta-venezia-indipendenza
+  # "porta-venezia-indipendenza"
+
   "citta-studi"
   # "lambrate"
   # "turro"

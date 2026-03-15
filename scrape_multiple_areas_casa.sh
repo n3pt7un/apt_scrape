@@ -24,14 +24,14 @@ VPN_ROTATE_BATCHES=3   # rotate VPN every N batches
 # List of areas to scrape (same as main multi-area script; edit as needed)
 AREAS=(
   "bicocca"
-  # "niguarda"
-  # "precotto"
-  # "citta-studi"
-  # "lambrate"
-  # "turro"
-  # "greco-segnano"
-  # "crescenzago"
-  # "centrale"
+  "niguarda"       # maps to bicocca-ca-granda-parco-nord zone on casa.it
+  "precotto"       # maps to gorla-greco-precotto zone
+  "citta-studi"    # maps to citta-studi-corsica-susa zone
+  "lambrate"
+  "turro"          # maps to gorla-greco-precotto zone (same as precotto)
+  "greco-segnano"  # maps to gorla-greco-precotto zone (same as precotto/turro)
+  "crescenzago"    # maps to adriano-crescenzago-parco-lambro-cimiano zone
+  "centrale"       # maps to centrale-repubblica zone
 )
 
 # Create output directory if it doesn't exist

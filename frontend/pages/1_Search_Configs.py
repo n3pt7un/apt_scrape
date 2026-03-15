@@ -82,13 +82,17 @@ def config_dialog(edit_data=None):
                 area_options = list(api.DEFAULT_AREAS_BY_SITE.get(base_site, api.DEFAULT_AREAS))
             if not area_options:
                 base_site = (site_id.split("-")[0] if "-" in site_id else site_id)
-                area_options = list(api.DEFAULT_AREAS_BY_SITE.get(base_site, api.DEFAULT_AREAS))
-            if "" not in area_options:
-                area_options = [""] + area_options
-            if defaults["area"] and defaults["area"] not in area_options:
-                area_options = [defaults["area"]] + area_options
-            area_index = area_options.index(defaults["area"]) if defaults["area"] in area_options else 0
-            area = st.selectbox("Area (optional)", area_options, index=area_index, key=f"{key_suffix}_area")
+                area_options = list(api.DEFAULT_AREAS_BY_SITE.get(base_site, api.DEFAULT_AREAS))            # Remove empty strings from area_options for multiselect
+            area_options = [a for a in area_options if a.strip()]
+            
+            raw_def = defaults.get("area") or ""
+            default_areas = [a.strip() for a in raw_def.split(",") if a.strip()]
+            for a in default_areas:
+                if a not in area_options:
+                    area_options.append(a)
+            
+            selected_areas = st.multiselect("Areas (leave empty for whole city)", area_options, default=default_areas, key=f"{key_suffix}_area")
+            area = ",".join(selected_areas)
             operation = st.selectbox("Operation", ["affitto", "vendita"], index=["affitto", "vendita"].index(defaults["operation"]), key=f"{key_suffix}_operation")
             property_type = st.text_input("Property types (comma-separated)", value=defaults["property_type"], key=f"{key_suffix}_property_type")
         with c2:

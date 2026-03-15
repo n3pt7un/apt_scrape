@@ -6,7 +6,7 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 # Fallback when GET /sites/{id}/areas fails; per-site to match shell scripts
 DEFAULT_AREAS = [
-    "bicocca", "niguarda", "precotto", "loreto", "citta-studi",
+    "bicocca", "niguarda", "precotto", "porta-venezia-indipendenza", "citta-studi",
     "lambrate", "turro", "greco-segnano", "crescenzago", "centrale", "pasteur-rovereto",
 ]
 # Per-site defaults (match config/default_areas_{site}.txt and scrape_multiple_areas_*.sh)

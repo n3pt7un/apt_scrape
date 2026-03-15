@@ -15,7 +15,7 @@ from sqlmodel import Session, select as sql_select
 
 from apt_scrape.enrichment import enrich_post_dates, enrich_with_details
 from apt_scrape.server import browser
-from apt_scrape.sites import SearchFilters, get_adapter, get_adapter_with_overrides, list_adapters
+from apt_scrape.sites import SearchFilters, get_adapter_with_overrides, list_adapters
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +56,27 @@ async def run_config_job(
             session.refresh(job)
             job_id = job.id
 
-    def _log(msg: str) -> None:
-        ts = datetime.utcnow().strftime("%H:%M:%S")
-        line = f"[{ts}] {msg}"
-        log_fn(line)
+    _log_buffer: list[str] = []
+
+    def _flush_log() -> None:
+        if not _log_buffer:
+            return
+        chunk = "".join(_log_buffer)
+        _log_buffer.clear()
         with Session(engine) as s:
             j = s.get(Job, job_id)
             if j:
-                j.log = (j.log or "") + line + "\n"
+                j.log = (j.log or "") + chunk
                 s.add(j)
                 s.commit()
+
+    def _log(msg: str) -> None:
+        ts = datetime.utcnow().strftime("%H:%M:%S")
+        line = f"[{ts}] {msg}\n"
+        log_fn(line.rstrip())
+        _log_buffer.append(line)
+        if len(_log_buffer) >= 10:
+            _flush_log()
 
     try:
         with Session(engine) as session:
@@ -83,7 +94,10 @@ async def run_config_job(
                 overrides = json.loads(row.overrides) if isinstance(row.overrides, str) else (row.overrides or {})
             adapter = get_adapter_with_overrides(base_site_id, overrides if overrides else None)
             city_slug = _normalize_slug(cfg.city)
-            area_slug = _normalize_slug(cfg.area) if cfg.area else None
+            raw_areas = [a.strip() for a in (cfg.area or "").split(",")]
+            area_slugs = [_normalize_slug(a) for a in raw_areas if a]
+            if not area_slugs:
+                area_slugs = [None]
             property_types = _parse_property_types(cfg.property_type)
             detail_concurrency = cfg.detail_concurrency
             vpn_rotate_batches = cfg.vpn_rotate_batches
@@ -107,28 +121,36 @@ async def run_config_job(
 
         # 2. Scrape search pages
         all_listings: list[dict] = []
-        for pt in property_types:
-            for page_num in range(start_page, end_page + 1):
-                if page_num > start_page and page_delay > 0:
-                    await asyncio.sleep(page_delay)
-                filters = SearchFilters(
-                    city=city_slug, area=area_slug, operation=operation,
-                    property_type=pt, min_price=min_price, max_price=max_price,
-                    min_sqm=min_sqm, min_rooms=min_rooms, page=page_num,
-                )
-                url = adapter.build_search_url(filters)
-                _log(f"Fetching {pt} page {page_num}: {url}")
-                html = await browser.fetch_page(url, wait_selector=adapter.config.search_wait_selector)
-                if request_delay > 0:
-                    await asyncio.sleep(request_delay)
-                page_listings = adapter.parse_search(html)
-                if not page_listings:
-                    _log(f"No listings on page {page_num}, stopping.")
-                    break
-                all_listings.extend([ls.to_dict() for ls in page_listings])
-                _log(f"  -> {len(page_listings)} listings")
+        for area_slug in area_slugs:
+            for pt in property_types:
+                for page_num in range(start_page, end_page + 1):
+                    if page_num > start_page and page_delay > 0:
+                        await asyncio.sleep(page_delay)
+                    filters = SearchFilters(
+                        city=city_slug, area=area_slug, operation=operation,
+                        property_type=pt, min_price=min_price, max_price=max_price,
+                        min_sqm=min_sqm, min_rooms=min_rooms, page=page_num,
+                    )
+                    url = adapter.build_search_url(filters)
+                    a_name = f" (area: {area_slug})" if area_slug else ""
+                    _log(f"Fetching {pt}{a_name} page {page_num}: {url}")
+                    html = await browser.fetch_page(url, wait_selector=adapter.config.search_wait_selector)
+                    if request_delay > 0:
+                        await asyncio.sleep(request_delay)
+                    page_listings = adapter.parse_search(html)
+                    if not page_listings:
+                        _log(f"No listings on page {page_num}, stopping.")
+                        break
+                    
+                    for ls in page_listings:
+                        l_dict = ls.to_dict()
+                        l_dict["_search_area"] = area_slug or ""
+                        all_listings.append(l_dict)
+                        
+                    _log(f"  -> {len(page_listings)} listings")
 
         # Deduplicate by URL
+        scraped_count = len(all_listings)
         seen: set[str] = set()
         deduped: list[dict] = []
         for listing in all_listings:
@@ -136,7 +158,8 @@ async def run_config_job(
             if key and key not in seen:
                 seen.add(key)
                 deduped.append(listing)
-        _log(f"Total unique listings: {len(deduped)}")
+        dupes_removed = scraped_count - len(deduped)
+        _log(f"Total unique listings: {len(deduped)} ({dupes_removed} dupes removed)")
 
         # 2a. Check Notion duplicates upfront
         to_enrich = deduped
@@ -171,17 +194,18 @@ async def run_config_job(
 
         # 5. Stamp area/city
         for listing in deduped:
-            listing["_area"] = area_slug or ""
+            listing["_area"] = listing.pop("_search_area", "")
             listing["_city"] = city_slug
 
         # 6. AI Analysis
+        ai_usage: dict = {}
         if auto_analyse and to_enrich:
             _log("Running AI analysis...")
             from apt_scrape.analysis import analyse_listings, load_preferences
             try:
                 prefs = load_preferences()
-                await analyse_listings(to_enrich, prefs)
-                _log("Analysis complete.")
+                ai_usage = await analyse_listings(to_enrich, prefs)
+                _log(f"Analysis complete. ~{ai_usage.get('tokens_used', 0)} tokens, ${ai_usage.get('cost_usd', 0):.4f}")
             except FileNotFoundError:
                 _log("[warn] preferences.txt not found — skipping analysis.")
 
@@ -195,24 +219,28 @@ async def run_config_job(
         # 8. Upsert listings to DB
         _log("Upserting listings to DB...")
         with Session(engine) as session:
+            urls = [str(l.get("url", "")).strip() for l in deduped if l.get("url")]
+            existing_map = {
+                row.url: row
+                for row in session.exec(sql_select(Listing).where(Listing.url.in_(urls))).all()
+            }
+            now = datetime.utcnow()
             for listing in deduped:
                 url = str(listing.get("url", "")).strip()
                 if not url:
                     continue
-                existing = session.exec(
-                    sql_select(Listing).where(Listing.url == url)
-                ).first()
                 row_data = dict(
                     url=url, job_id=job_id, config_id=config_id,
                     title=listing.get("title", ""), price=listing.get("price", ""),
                     sqm=listing.get("sqm", ""), rooms=listing.get("rooms", ""),
-                    area=area_slug or "", city=city_slug,
+                    area=listing.get("_area", ""), city=city_slug,
                     ai_score=listing.get("ai_score"),
                     ai_verdict=listing.get("ai_verdict"),
                     notion_page_id=listing.get("notion_page_id"),
                     raw_json=json.dumps(listing, ensure_ascii=False),
-                    scraped_at=datetime.utcnow(),
+                    scraped_at=now,
                 )
+                existing = existing_map.get(url)
                 if existing:
                     for k, v in row_data.items():
                         setattr(existing, k, v)
@@ -221,21 +249,33 @@ async def run_config_job(
                     session.add(Listing(**row_data))
             session.commit()
 
-        # 9. Mark job done
+        # 9. Mark job done with stats
+        area_stats: dict[str, int] = {}
+        for listing in deduped:
+            a = listing.get("_area") or ""
+            area_stats[a] = area_stats.get(a, 0) + 1
+
         with Session(engine) as session:
             job = session.get(Job, job_id)
             job.status = "done"
             job.finished_at = datetime.utcnow()
             job.listing_count = len(deduped)
+            job.scraped_count = scraped_count
+            job.dupes_removed = dupes_removed
+            job.ai_tokens_used = ai_usage.get("tokens_used")
+            job.ai_cost_usd = ai_usage.get("cost_usd")
+            job.area_stats = json.dumps(area_stats)
             session.add(job)
             session.commit()
 
         _log(f"Job complete. {len(deduped)} listings processed.")
+        _flush_log()
         return job_id
 
     except Exception as exc:
         logger.exception("Job %d failed", job_id)
         _log(f"[ERROR] {exc}")
+        _flush_log()
         with Session(engine) as session:
             job = session.get(Job, job_id)
             if job:
