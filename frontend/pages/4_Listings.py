@@ -100,13 +100,30 @@ event = st.dataframe(
     },
     use_container_width=True,
     hide_index=True,
-    selection_mode="single-row",
+    selection_mode="multi-row",
     on_select="rerun",
 )
 
-# ── Selected listing detail ───────────────────────────────────────────────────
+# ── Selection actions ─────────────────────────────────────────────────────────
 selected_rows = event.selection.rows if hasattr(event, "selection") else []
-if selected_rows:
+
+if len(selected_rows) > 1:
+    selected_ids = [listings[i]["id"] for i in selected_rows]
+    if st.button(f"Push {len(selected_ids)} listing(s) to Notion", type="primary"):
+        try:
+            result = api.post("/listings/notion-push", json={"listing_ids": selected_ids})
+            st.success(
+                f"Notion push complete: {result['pushed']} pushed, "
+                f"{result['skipped']} already in Notion."
+            )
+            if result.get("errors"):
+                st.error(f"Errors: {result['errors']}")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Push failed: {e}")
+
+# ── Selected listing detail (only when exactly one row selected) ──────────────
+if len(selected_rows) == 1:
     idx = selected_rows[0]
     listing = listings[idx]
 
@@ -133,3 +150,19 @@ if selected_rows:
             st.write(verdict)
         if listing.get("notion_page_id"):
             st.write(f"**Notion:** {listing['notion_page_id']}")
+            st.button("Already in Notion", disabled=True)
+        else:
+            if st.button("Push this listing to Notion"):
+                try:
+                    result = api.post(
+                        "/listings/notion-push",
+                        json={"listing_ids": [listing["id"]]},
+                    )
+                    st.success(
+                        f"Done: {result['pushed']} pushed, {result['skipped']} skipped."
+                    )
+                    if result.get("errors"):
+                        st.error(f"Errors: {result['errors']}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Push failed: {e}")
