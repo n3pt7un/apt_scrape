@@ -57,7 +57,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 03-01: Refactor LLM fallback path to distinguish error types, add per-listing-ID logging, and write split unit tests
+- [ ] 03-01-PLAN.md — Add LLMAPIError/LLMParseError exception hierarchy, module logger, restructure _analyse_node and _score_one, write caplog unit tests (TDD)
 
 ### Phase 4: Notion Fail-Fast
 **Goal**: A Notion pre-check API error stops the job immediately rather than risking duplicate pushes
@@ -81,5 +81,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Browser Reliability | 0/TBD | Not started | - |
 | 2. Job Runner Reliability | 1/1 | Complete   | 2026-03-16 |
-| 3. LLM Scoring Observability | 0/TBD | Not started | - |
+| 3. LLM Scoring Observability | 0/1 | Not started | - |
 | 4. Notion Fail-Fast | 0/TBD | Not started | - |
