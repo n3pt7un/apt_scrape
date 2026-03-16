@@ -1,7 +1,0 @@
-fastapi==0.115.6
-uvicorn[standard]==0.32.1
-apscheduler==3.10.4
-sqlmodel==0.0.21
-aiofiles==24.1.0
-python-dotenv==1.0.1
-httpx==0.28.1
