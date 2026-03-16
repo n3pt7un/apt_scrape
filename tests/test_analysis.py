@@ -100,12 +100,12 @@ async def test_analyse_listings_adds_ai_fields():
 
 @pytest.mark.asyncio
 async def test_analyse_listings_handles_error_gracefully():
-    """analyse_listings() falls back to score=0/Error when LLM raises."""
-    from apt_scrape.analysis import analyse_listings
+    """analyse_listings() falls back to score=0/Error when LLM raises LLMAPIError."""
+    from apt_scrape.analysis import LLMAPIError, analyse_listings
 
     with patch("apt_scrape.analysis._get_graph") as mock_get_graph:
         mock_app = AsyncMock()
-        mock_app.ainvoke.side_effect = Exception("network error")
+        mock_app.ainvoke.side_effect = LLMAPIError("network error")
         mock_get_graph.return_value = mock_app
 
         listings = [dict(LISTING)]
