@@ -43,7 +43,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 02-01: Add `finally` block for log flush and write log-persistence unit test
+- [ ] 02-01-PLAN.md — Move _flush_log() to finally block in runner.py; write failing test first (BaseException path), then apply fix
 
 ### Phase 3: LLM Scoring Observability
 **Goal**: Users can tell which listings were skipped by AI scoring and why — API failure vs parse failure
@@ -80,6 +80,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Browser Reliability | 0/TBD | Not started | - |
-| 2. Job Runner Reliability | 0/TBD | Not started | - |
+| 2. Job Runner Reliability | 0/1 | Planning complete | - |
 | 3. LLM Scoring Observability | 0/TBD | Not started | - |
 | 4. Notion Fail-Fast | 0/TBD | Not started | - |
