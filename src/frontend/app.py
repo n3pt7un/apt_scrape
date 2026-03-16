@@ -1,6 +1,9 @@
 """frontend.app — Streamlit multi-page app entry point."""
 import streamlit as st
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 st.set_page_config(
     page_title="apt_scrape",
