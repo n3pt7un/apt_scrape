@@ -1,39 +1,62 @@
-# Running the Dashboard Locally (No Docker)
+# Running the Dashboard Locally
 
-This describes how to run the **Streamlit dashboard** and **FastAPI backend** on your machine without Docker.
+This describes how to run the **Streamlit dashboard** and **FastAPI backend** on your machine.
 
 ## One-time setup
 
-From the repo root:
+### Option A: uv (recommended locally)
 
 ```bash
-# Create and activate a venv (recommended)
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+# Install uv if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install all dependencies (CLI + backend + frontend)
-pip install -r requirements.txt -r backend/requirements.txt -r frontend/requirements.txt
+# From the repo root — installs everything and registers the apt / scr-apt CLI
+uv sync --all-extras
 
 # Optional: browser for scraping
-camoufox fetch
+uv run camoufox fetch
 ```
 
-Ensure the `data` directory exists (scripts create it if missing):
+Ensure the data directory exists:
 
 ```bash
 mkdir -p data
 touch data/preferences.txt
 ```
 
-## Start backend
-
-In a **first terminal**:
+### Option B: conda
 
 ```bash
-./scripts/run_backend.sh
+conda create -n apt-scrape python=3.11
+conda activate apt-scrape
+pip install -e ".[backend,frontend]"
+uv run camoufox fetch   # or: python -m camoufox fetch
 ```
 
-Or manually:
+### Option C: plain pip / venv
+
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[backend,frontend]"
+python -m camoufox fetch
+```
+
+---
+
+## Start the services
+
+### With uv (recommended)
+
+```bash
+apt start   # starts backend (port 8000) + frontend (port 8501)
+```
+
+`apt` is a uv console script entry point registered by `uv sync`. If it isn't on your PATH yet, run `source ~/.local/bin/env` or restart your shell.
+
+### Manually (all install methods)
+
+Start the backend in one terminal:
 
 ```bash
 export PYTHONPATH=.
@@ -42,45 +65,24 @@ export PREFERENCES_FILE=data/preferences.txt
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Backend will be at **http://127.0.0.1:8000**. Health check: `curl http://127.0.0.1:8000/health`
-
-## Start frontend
-
-In a **second terminal** (with backend already running):
-
-```bash
-./scripts/run_frontend.sh
-```
-
-Or manually:
+Start the frontend in a second terminal (with backend already running):
 
 ```bash
 export BACKEND_URL=http://127.0.0.1:8000
 streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
 ```
 
-Dashboard will be at **http://127.0.0.1:8501**. The **home page** lists the app’s purpose and links to Search Configs, Monitor, Listings, Site Settings, and Preferences.
+Backend: **http://127.0.0.1:8000** — health check: `curl http://127.0.0.1:8000/health`
+Dashboard: **http://127.0.0.1:8501** — use the sidebar to navigate.
 
-## Dashboard features
-
-- **Search Configs:** Choose site (immobiliare, casa, idealista), set rate limits (request delay, page delay), and pick area from the list (managed in Site settings).
-- **Site settings:** View full config (base, overrides, effective) and edit overrides as YAML. **Per-site rate limit:** set "Max requests per minute" (e.g. 15 for immobiliare); the runner caps search requests so they never exceed that rate. **Save as test variant** (e.g. `immobiliare-test1`) to create a copy for testing. The **default area list** is per-site: **config/default_areas_immobiliare.txt**, **config/default_areas_casa.txt**, **config/default_areas_idealista.txt** (fallback: **config/default_areas.txt**). Keep these in sync with the AREAS in each shell script.
-
-## Avoiding the 404 on Search Configs
-
-If you see a browser 404 for `Search_Configs/_stcore/host-config`:
-
-- **Open the app from the root URL:** http://127.0.0.1:8501 (not a direct link to a page like `/Search_Configs`).
-- Use the **sidebar** to go to "Search Configs", "Monitor", "Preferences", or "Listings".
-
-Opening a page URL directly can trigger that 404; starting from the home page avoids it.
+---
 
 ## apt CLI
 
-The `apt` script manages backend and frontend processes from the repo root.
+The `apt` entry point manages backend and frontend processes from any directory.
 
 ```bash
-./apt <command> [service]
+apt <command> [service]
 ```
 
 | Command | Description |
@@ -101,13 +103,31 @@ The `apt` script manages backend and frontend processes from the repo root.
 
 Logs are written to `.logs/backend.log` and `.logs/frontend.log`.
 
-## If the backend won’t start
+---
 
-- **"No module named 'fastapi'"** — Install backend deps:  
-  `pip install -r backend/requirements.txt`
-- **"No module named 'backend'"** — Run from repo root with:  
-  `PYTHONPATH=.` (or use `./scripts/run_backend.sh`).
+## Dashboard features
+
+- **Search Configs:** Choose site (immobiliare, casa, idealista), set rate limits (request delay, page delay), and pick area from the list (managed in Site settings).
+- **Site settings:** View full config (base, overrides, effective) and edit overrides as YAML. **Per-site rate limit:** set "Max requests per minute" (e.g. 15 for immobiliare). **Save as test variant** to create a copy for testing. The **default area list** is per-site: **config/default_areas_immobiliare.txt**, **config/default_areas_casa.txt**, **config/default_areas_idealista.txt** (fallback: **config/default_areas.txt**).
+
+## Avoiding the 404 on Search Configs
+
+If you see a browser 404 for `Search_Configs/_stcore/host-config`:
+
+- **Open the app from the root URL:** http://127.0.0.1:8501 (not a direct link to a page like `/Search_Configs`).
+- Use the **sidebar** to go to "Search Configs", "Monitor", "Preferences", or "Listings".
+
+---
+
+## If the backend won't start
+
+- **"No module named 'fastapi'"** — Install backend deps:
+  `uv sync --extra backend`
+  (pip: `pip install -e ".[backend]"`)
+- **"No module named 'backend'"** — Run from repo root with `PYTHONPATH=.` set.
 - **DB or preferences errors** — Set `DB_PATH` and `PREFERENCES_FILE` to writable paths (e.g. `data/app.db` and `data/preferences.txt`) and ensure `data/` exists.
+
+---
 
 ## Environment Variables
 
@@ -116,19 +136,21 @@ Copy `.env.example` to `.env` and fill in values. All are optional unless marked
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DB_PATH` | no | `data/app.db` | SQLite database path |
-| `PREFERENCES_FILE` | no | `preferences.txt` (repo root) | Used for AI scoring. `apt` CLI defaults to repo root; shell scripts default to `data/preferences.txt` |
+| `PREFERENCES_FILE` | no | `preferences.txt` (repo root) | Used for AI scoring. `apt` CLI defaults to repo root |
 | `BACKEND_URL` | no | `http://127.0.0.1:8000` | URL the frontend uses to reach the backend |
 | `OPENROUTER_API_KEY` | for AI scoring | — | OpenRouter API key |
-| `OPENROUTER_MODEL` | no | `google/gemini-2.0-flash-lite` (`.env.example`); code fallback: `google/gemini-3.1-flash-lite-preview` | Model slug passed to OpenRouter |
+| `OPENROUTER_MODEL` | no | `google/gemini-2.0-flash-lite` | Model slug passed to OpenRouter |
 | `ANALYSIS_CONCURRENCY` | no | `5` | Max parallel AI scoring calls |
 | `NOTION_API_KEY` | for Notion push | — | Notion integration token |
 | `NOTION_APARTMENTS_DB_ID` | for Notion push | — | Notion database ID for apartment listings |
 | `NOTION_AREAS_DB_ID` | for Notion push | — | Notion database ID for areas |
 | `NOTION_AGENCIES_DB_ID` | for Notion push | — | Notion database ID for agencies |
-| `NORDVPN_USER` | for proxy rotation | — | NordVPN service username (see `.env.example` for how to get this) |
+| `NORDVPN_USER` | for proxy rotation | — | NordVPN service username (see `.env.example`) |
 | `NORDVPN_PASS` | for proxy rotation | — | NordVPN service password |
 | `NORDVPN_SERVERS` | for proxy rotation | — | Comma-separated SOCKS5 hostnames |
 | `PROXY_ROTATE_EVERY` | no | `15` | Requests before rotating proxy |
+
+---
 
 ## AI Scoring Setup
 
@@ -142,6 +164,8 @@ Copy `.env.example` to `.env` and fill in values. All are optional unless marked
    Close to a metro stop
    ```
 4. In the dashboard, enable AI scoring per Search Config — scores appear in the Listings page (0–100)
+
+---
 
 ## Notion Integration
 
