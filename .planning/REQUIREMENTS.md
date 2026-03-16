@@ -9,8 +9,8 @@ Requirements for this reliability milestone. Each maps to a roadmap phase.
 
 ### Browser Reliability
 
-- [ ] **BRWSR-01**: `_ensure_browser()` uses an asyncio.Lock so concurrent detail enrichment batches cannot collide during browser close/reconnect cycles
-- [ ] **BRWSR-02**: Unit test verifies that concurrent calls to `_ensure_browser()` do not trigger simultaneous reconnects
+- [x] **BRWSR-01**: `_ensure_browser()` uses an asyncio.Lock so concurrent detail enrichment batches cannot collide during browser close/reconnect cycles
+- [x] **BRWSR-02**: Unit test verifies that concurrent calls to `_ensure_browser()` do not trigger simultaneous reconnects
 
 ### Job Runner Reliability
 
@@ -65,8 +65,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BRWSR-01 | Phase 1 | Pending |
-| BRWSR-02 | Phase 1 | Pending |
+| BRWSR-01 | Phase 1 | Complete |
+| BRWSR-02 | Phase 1 | Complete |
 | RUNNER-01 | Phase 2 | Pending |
 | RUNNER-02 | Phase 2 | Pending |
 | LLM-01 | Phase 3 | Pending |
