@@ -117,6 +117,7 @@ class BrowserManager:
         self._relay_port: int = 0
         self._rotation_lock = asyncio.Lock()
         self._rate_limit_lock = asyncio.Lock()
+        self._browser_lock = asyncio.Lock()
 
         if self._proxy_list:
             logger.info(
@@ -133,23 +134,24 @@ class BrowserManager:
 
     async def _ensure_browser(self) -> None:
         """Start the Camoufox browser if not already running."""
-        if self._browser is not None:
-            if not self._browser.is_connected():
-                logger.warning("Browser disconnected unexpectedly. Cleaning up...")
-                await self.close()
+        async with self._browser_lock:
+            if self._browser is not None:
+                if not self._browser.is_connected():
+                    logger.warning("Browser disconnected unexpectedly. Cleaning up...")
+                    await self.close()
 
-        if self._browser is not None:
-            return
+            if self._browser is not None:
+                return
 
-        logger.info("Starting Camoufox browser...")
-        from camoufox.async_api import AsyncCamoufox
+            logger.info("Starting Camoufox browser...")
+            from camoufox.async_api import AsyncCamoufox
 
-        headless = os.getenv("BROWSER_HEADLESS", "true").lower() not in ("0", "false", "no")
-        logger.info("Camoufox headless=%s (set BROWSER_HEADLESS=false to show window)", headless)
-        self._camoufox_ctx = AsyncCamoufox(headless=headless)
-        self._browser = await self._camoufox_ctx.__aenter__()
-        logger.info("Camoufox browser started.")
-        await self._ensure_context()
+            headless = os.getenv("BROWSER_HEADLESS", "true").lower() not in ("0", "false", "no")
+            logger.info("Camoufox headless=%s (set BROWSER_HEADLESS=false to show window)", headless)
+            self._camoufox_ctx = AsyncCamoufox(headless=headless)
+            self._browser = await self._camoufox_ctx.__aenter__()
+            logger.info("Camoufox browser started.")
+            await self._ensure_context()
 
     @staticmethod
     def _free_port() -> int:
