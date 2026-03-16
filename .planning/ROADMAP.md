@@ -27,10 +27,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Multiple concurrent calls to `_ensure_browser()` result in exactly one reconnect, not multiple simultaneous ones
   2. The asyncio.Lock is held for the duration of the close/reconnect cycle so no caller can interleave
   3. Unit test passes that spawns concurrent callers and asserts only one reconnect occurred
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 01-01: Implement asyncio.Lock in `_ensure_browser()` and write concurrency regression test
+- [ ] 01-01-PLAN.md — Fix async race condition in `_ensure_browser()` with asyncio.Lock and concurrency test
 
 ### Phase 2: Job Runner Reliability
 **Goal**: Job log messages are always persisted to the database even when an exception aborts the job mid-run
@@ -40,7 +40,7 @@ Plans:
   1. Log messages written before an exception are present in the Job record after the job fails
   2. The flush call lives in a `finally` block so no exception path can bypass it
   3. Unit test simulates a mid-job exception and asserts pre-exception log lines are in the database record
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 02-01: Add `finally` block for log flush and write log-persistence unit test
@@ -54,7 +54,7 @@ Plans:
   2. When LLM response parsing fails, the error is logged with a message and exception type distinct from an API failure
   3. Every listing that fails AI scoring is logged by its listing ID so the user can identify it in logs
   4. Unit tests cover the parse failure path and API failure path separately and assert distinct exception types and log messages
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 03-01: Refactor LLM fallback path to distinguish error types, add per-listing-ID logging, and write split unit tests
@@ -67,7 +67,7 @@ Plans:
   1. When the Notion pre-check call returns an API error, the job raises an exception and halts — no listings are pushed
   2. The error is not swallowed as a warning; it propagates as a job-level failure visible in job logs
   3. Unit test mocks a Notion API error during pre-check and asserts an exception is raised (not a warning logged)
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 04-01: Change Notion pre-check error handling to raise and write exception-assertion unit test
