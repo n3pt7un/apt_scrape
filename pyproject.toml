@@ -42,8 +42,8 @@ scr-apt = "apt_scrape.cli:cli"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest",
     "pytest-asyncio>=0.23",
 ]
