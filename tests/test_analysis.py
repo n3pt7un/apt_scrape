@@ -2,6 +2,8 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import logging
+
 import pytest
 
 # Minimal listing dict (detail-enriched)
@@ -112,6 +114,50 @@ async def test_analyse_listings_handles_error_gracefully():
     assert listings[0]["ai_score"] == 0
     assert listings[0]["ai_verdict"] == "Error"
     assert "network error" in listings[0]["ai_reason"]
+
+
+@pytest.mark.asyncio
+async def test_api_failure_logs_distinct_message(caplog):
+    """_score_one() emits 'LLM API failure' warning with listing URL on API errors."""
+    from apt_scrape.analysis import LLMAPIError, analyse_listings
+
+    with patch("apt_scrape.analysis._get_graph") as mock_get_graph:
+        mock_app = AsyncMock()
+        mock_app.ainvoke.side_effect = LLMAPIError("connection timeout")
+        mock_get_graph.return_value = mock_app
+
+        with caplog.at_level(logging.WARNING, logger="apt_scrape.analysis"):
+            listings = [dict(LISTING)]
+            listings[0]["url"] = "https://example.com/apt/1"
+            await analyse_listings(listings, preferences="want bright apt")
+
+    assert listings[0]["ai_score"] == 0
+    assert listings[0]["ai_verdict"] == "Error"
+    assert any("LLM API failure" in r.message for r in caplog.records)
+    assert any("https://example.com/apt/1" in r.message for r in caplog.records)
+    assert not any("parse failure" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_parse_failure_logs_distinct_message(caplog):
+    """_score_one() emits 'LLM parse failure' warning with listing URL on parse errors."""
+    from apt_scrape.analysis import LLMParseError, analyse_listings
+
+    with patch("apt_scrape.analysis._get_graph") as mock_get_graph:
+        mock_app = AsyncMock()
+        mock_app.ainvoke.side_effect = LLMParseError("invalid JSON")
+        mock_get_graph.return_value = mock_app
+
+        with caplog.at_level(logging.WARNING, logger="apt_scrape.analysis"):
+            listings = [dict(LISTING)]
+            listings[0]["url"] = "https://example.com/apt/1"
+            await analyse_listings(listings, preferences="want bright apt")
+
+    assert listings[0]["ai_score"] == 0
+    assert listings[0]["ai_verdict"] == "Error"
+    assert any("LLM parse failure" in r.message for r in caplog.records)
+    assert any("https://example.com/apt/1" in r.message for r in caplog.records)
+    assert not any("LLM API failure" in r.message for r in caplog.records)
 
 
 def test_load_preferences_from_file(tmp_path):
