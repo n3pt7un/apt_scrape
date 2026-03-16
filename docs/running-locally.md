@@ -61,7 +61,7 @@ apt start   # starts backend (port 8000) + frontend (port 8501)
 Start the backend in one terminal:
 
 ```bash
-export PYTHONPATH=.
+export PYTHONPATH=src
 export DB_PATH=data/app.db
 export PREFERENCES_FILE=data/preferences.txt
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
@@ -71,7 +71,7 @@ Start the frontend in a second terminal (with backend already running):
 
 ```bash
 export BACKEND_URL=http://127.0.0.1:8000
-streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
+streamlit run src/frontend/app.py --server.port 8501 --server.address 0.0.0.0
 ```
 
 Backend: **http://127.0.0.1:8000** — health check: `curl http://127.0.0.1:8000/health`

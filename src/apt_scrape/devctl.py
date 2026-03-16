@@ -12,7 +12,6 @@ import os
 import shutil
 import signal
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -38,7 +37,7 @@ SERVICES = {
         "env": {
             "DB_PATH": str(REPO_ROOT / "data" / "app.db"),
             "PREFERENCES_FILE": str(REPO_ROOT / "preferences.txt"),
-            "PYTHONPATH": str(REPO_ROOT),
+            "PYTHONPATH": str(REPO_ROOT / "src"),
         },
         "cwd": str(REPO_ROOT),
         "url": "http://localhost:8000/health",
@@ -46,14 +45,14 @@ SERVICES = {
     "frontend": {
         "cmd": lambda: [
             _find_bin("streamlit"), "run",
-            str(REPO_ROOT / "frontend" / "app.py"),
+            str(REPO_ROOT / "src" / "frontend" / "app.py"),
             "--server.port", "8501",
             "--server.address", "0.0.0.0",
         ],
         "env": {
             "BACKEND_URL": "http://localhost:8000",
         },
-        "cwd": str(REPO_ROOT / "frontend"),
+        "cwd": str(REPO_ROOT / "src" / "frontend"),
         "url": "http://localhost:8501",
     },
 }
