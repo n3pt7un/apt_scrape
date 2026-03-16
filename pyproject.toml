@@ -49,4 +49,4 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["apt_scrape", "backend", "frontend"]
+packages = ["src/apt_scrape", "src/backend", "src/frontend"]

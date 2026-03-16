@@ -18,7 +18,7 @@ from pathlib import Path
 
 import click
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _find_bin(name: str) -> str:

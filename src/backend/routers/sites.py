@@ -15,8 +15,8 @@ from fastapi import Depends
 
 router = APIRouter()
 
-# Repo root: backend/routers/sites.py -> parent.parent = backend, parent.parent.parent = repo root
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+# Repo root: src/backend/routers/sites.py -> parent = routers, parent.parent = backend, parent.parent.parent = src, parent.parent.parent.parent = repo root
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _CONFIG_DIR = _REPO_ROOT / "config"
 
 # Resolve base adapter for variant site_ids (e.g. immobiliare-test1 -> immobiliare)
