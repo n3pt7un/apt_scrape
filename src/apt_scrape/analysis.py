@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Optional, TypedDict
@@ -23,6 +24,27 @@ import click
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
+
+
+# ---------------------------------------------------------------------------
+# Exception hierarchy
+# ---------------------------------------------------------------------------
+
+
+class LLMError(Exception):
+    """Base class for all LLM scoring failures."""
+
+
+class LLMAPIError(LLMError):
+    """Raised when the LLM API call itself fails (network, HTTP, auth error)."""
+
+
+class LLMParseError(LLMError):
+    """Raised when the LLM response cannot be parsed into structured output."""
+
+
+# Module-level logger — name matches caplog logger="apt_scrape.analysis" in tests
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +262,9 @@ async def _analyse_node(state: AnalysisState) -> AnalysisState:
             [{"role": "system", "content": system_prompt},
              {"role": "user", "content": human_prompt}]
         )
-    except Exception:
-        # Fallback: ask for raw JSON covering at minimum the required fields
+    except Exception as e:
+        # Primary structured call failed — classify as API failure, attempt raw-JSON fallback
+        api_exc = LLMAPIError(str(e))
         detail = listing.get("detail") or {}
         fallback_title = detail.get("title") or listing.get("title", "Untitled")
         fallback_prompt = (
@@ -266,12 +289,8 @@ async def _analyse_node(state: AnalysisState) -> AnalysisState:
             data.setdefault("ai_reason", data.pop("reason", ""))
             result = NotionApartmentFields(**data)
         except Exception as e2:
-            result = NotionApartmentFields(
-                title=fallback_title,
-                ai_score=0,
-                ai_verdict="Error",
-                ai_reason=str(e2),
-            )
+            # Fallback parse or construction failed — classify as parse failure
+            raise LLMParseError(str(e2)) from e2
 
     return {**state, "result": result}
 
@@ -333,13 +352,32 @@ async def analyse_listings(listings: list[dict], preferences: str) -> dict:
 
     async def _score_one(listing: dict) -> None:
         nonlocal total_tokens
+        listing_id = listing.get("url") or listing.get("title", "unknown")
         async with semaphore:
             try:
                 output = await graph.ainvoke(
                     {"listing": listing, "preferences": preferences, "result": None}
                 )
                 result: NotionApartmentFields = output["result"]
+            except LLMAPIError as e:
+                logger.warning("Listing %s skipped: LLM API failure — %s", listing_id, e)
+                result = NotionApartmentFields(
+                    title=(listing.get("detail", {}) or {}).get("title") or listing.get("title", "Untitled"),
+                    ai_score=0,
+                    ai_verdict="Error",
+                    ai_reason=str(e),
+                )
+            except LLMParseError as e:
+                logger.warning("Listing %s skipped: LLM parse failure — %s", listing_id, e)
+                result = NotionApartmentFields(
+                    title=(listing.get("detail", {}) or {}).get("title") or listing.get("title", "Untitled"),
+                    ai_score=0,
+                    ai_verdict="Error",
+                    ai_reason=str(e),
+                )
             except Exception as e:
+                # Safety net for unexpected untyped errors (e.g. plain Exception in tests)
+                logger.warning("Listing %s skipped: unexpected error — %s", listing_id, e)
                 result = NotionApartmentFields(
                     title=(listing.get("detail", {}) or {}).get("title") or listing.get("title", "Untitled"),
                     ai_score=0,
