@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""apt — local dev CLI for apt_scrape.
+"""apt_scrape.devctl — local dev CLI for apt_scrape.
 
 Commands:
   start     Start backend and/or frontend
@@ -18,13 +18,14 @@ from pathlib import Path
 
 import click
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _find_bin(name: str) -> str:
     """Find a binary on PATH, fall back to running via sys.executable -m."""
     found = shutil.which(name)
     return found if found else name  # let the shell error if missing
+
 PID_DIR = REPO_ROOT / ".pids"
 LOG_DIR = REPO_ROOT / ".logs"
 
