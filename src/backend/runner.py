@@ -281,13 +281,11 @@ async def run_config_job(
             session.commit()
 
         _log(f"Job complete. {len(deduped)} listings processed.")
-        _flush_log()
         return job_id
 
     except Exception as exc:
         logger.exception("Job %d failed", job_id)
         _log(f"[ERROR] {exc}")
-        _flush_log()
         with Session(engine) as session:
             job = session.get(Job, job_id)
             if job:
@@ -296,3 +294,6 @@ async def run_config_job(
                 session.add(job)
                 session.commit()
         return job_id
+    finally:
+        # Runs on all exit paths — Exception, BaseException (CancelledError, KeyboardInterrupt), and normal return.
+        _flush_log()
