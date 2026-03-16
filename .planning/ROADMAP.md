@@ -70,7 +70,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 04-01: Change Notion pre-check error handling to raise and write exception-assertion unit test
+- [ ] 04-01-PLAN.md — Remove inner try/except from Notion pre-check block in runner.py; write RED test first, then apply fix (TDD)
 
 ## Progress
 
@@ -82,4 +82,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Browser Reliability | 0/TBD | Not started | - |
 | 2. Job Runner Reliability | 1/1 | Complete   | 2026-03-16 |
 | 3. LLM Scoring Observability | 1/1 | Complete   | 2026-03-16 |
-| 4. Notion Fail-Fast | 0/TBD | Not started | - |
+| 4. Notion Fail-Fast | 0/1 | Not started | - |
