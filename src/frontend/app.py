@@ -1,5 +1,6 @@
 """frontend.app — Streamlit multi-page app entry point."""
 import streamlit as st
+import os
 
 st.set_page_config(
     page_title="apt_scrape",
@@ -7,6 +8,24 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# Check missing environment variables
+required_envs = [
+    "OPENROUTER_API_KEY",
+    "NOTION_API_KEY",
+    "NOTION_APARTMENTS_DB_ID",
+    "NOTION_AREAS_DB_ID",
+    "NOTION_AGENCIES_DB_ID"
+]
+missing_envs = [var for var in required_envs if not os.environ.get(var)]
+
+if missing_envs:
+    st.warning(
+        "⚠️ **Missing Environment Variables Detected!**\n\n"
+        "The following required environment variables are not set or are empty:\n"
+        + "".join([f"- `{var}`\n" for var in missing_envs])
+        + "\nYou won't be able to run tasks properly without a complete setup."
+    )
 
 # Hero
 st.markdown("# 🏠 apt_scrape")
