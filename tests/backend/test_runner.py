@@ -64,3 +64,39 @@ def test_run_config_job_creates_job_record():
         assert job.status == "done"
         assert job.listing_count == 1
         assert job.config_id == config_id
+
+
+def test_log_persists_on_mid_job_exception():
+    config_id = _make_config()
+    logs = []
+
+    with (
+        patch("backend.runner.browser") as mock_browser,
+        patch("backend.runner.get_adapter_with_overrides") as mock_get_adapter,
+        patch("backend.runner.enrich_with_details", new_callable=AsyncMock),
+        patch("backend.runner.enrich_post_dates", new_callable=AsyncMock),
+    ):
+        mock_browser.fetch_page = AsyncMock(side_effect=asyncio.CancelledError("simulated cancel"))
+        mock_adapter = MagicMock()
+        mock_adapter.build_search_url.return_value = "https://example.com/search"
+        mock_adapter.parse_search.return_value = []
+        mock_adapter.config.search_wait_selector = None
+        mock_adapter.config.page_load_wait = "domcontentloaded"
+        mock_adapter.config.search_wait_timeout = 15000
+        mock_get_adapter.return_value = mock_adapter
+
+        try:
+            job_id = asyncio.run(backend_runner_run(config_id, logs.append))
+        except BaseException:
+            # fetch the job_id from the DB — it was created before the exception
+            with Session(engine) as s:
+                from sqlmodel import select as sql_select
+                from backend.db import Job
+                jobs = s.exec(sql_select(Job).where(Job.config_id == config_id)).all()
+                job_id = jobs[-1].id  # most recently created
+
+    with Session(engine) as s:
+        job = s.get(Job, job_id)
+        assert job is not None
+        assert job.log is not None and len(job.log) > 0
+        assert "Fetching" in job.log  # pre-exception log line must be persisted
