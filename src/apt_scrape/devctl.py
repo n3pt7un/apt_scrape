@@ -194,7 +194,7 @@ def status():
 @cli.command()
 @click.argument("service", type=click.Choice(["backend", "frontend"]))
 @click.option("-n", "--lines", default=50, show_default=True, help="Number of lines to show.")
-@click.option("-f", "--follow", is_flag=True, help="Follow log output (like tail -f).")
+@click.option("-f", "--follow", "--stream", is_flag=True, help="Stream log output continuously (like tail -f).")
 def logs(service: str, lines: int, follow: bool):
     """Tail logs for a service."""
     log_path = _log_file(service)
