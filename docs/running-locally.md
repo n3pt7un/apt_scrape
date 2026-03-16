@@ -2,9 +2,11 @@
 
 This describes how to run the **Streamlit dashboard** and **FastAPI backend** on your machine.
 
+> **Docker:** Docker support is not currently maintained. `Dockerfile`s and `docker-compose.yml` are preserved for future use but may not work out of the box.
+
 ## One-time setup
 
-### Option A: uv (recommended locally)
+### Option A: uv (recommended)
 
 ```bash
 # Install uv if you don't have it
