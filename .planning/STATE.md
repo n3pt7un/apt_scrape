@@ -4,6 +4,12 @@
 
 See: .planning/PROJECT.md (updated 2026-03-16)
 
+## Quick Tasks Completed
+
+| Task | Date | Status | Overview |
+|------|------|--------|----------|
+| `1-env-var-check` | 2026-03-16 | Completed | Added environment variable presence check in the Streamlit startup sequence. |
+
 **Core value:** Listings land in Notion accurately, completely, and without silent data loss — every failure is visible and no error is swallowed.
 **Current focus:** Phase 1 — Browser Reliability
 
