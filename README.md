@@ -6,7 +6,7 @@ Scrape and monitor Italian real estate listings. Plugin architecture — one con
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B?logo=streamlit&logoColor=white)
 ![Camoufox](https://img.shields.io/badge/Camoufox-stealth_Firefox-FF7139?logo=firefox&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![uv](https://img.shields.io/badge/uv-package_manager-DE5FE9?logo=astral&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-server-8A2BE2)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
@@ -71,43 +71,37 @@ The Streamlit dashboard (port 8501) has six pages:
 
 ## Setup
 
-### Local (recommended)
+### Local — uv (recommended)
 
 ```bash
 git clone https://github.com/tarasivaniv/rent-fetch.git
 cd rent-fetch
 
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+uv sync --all-extras              # installs deps, registers apt / scr-apt CLI
+uv run camoufox fetch             # downloads browser binary (~100 MB, one-time)
 
-pip install -r requirements.txt -r backend/requirements.txt -r frontend/requirements.txt
-camoufox fetch                  # downloads browser binary (~100 MB, one-time)
-
-cp .env.example .env            # fill in API keys (see Environment Variables)
+cp .env.example .env              # fill in API keys (see Environment Variables)
 mkdir -p data && touch preferences.txt
 
-apt start                       # starts backend (port 8000) + frontend (port 8501)
+apt start                         # starts backend (port 8000) + frontend (port 8501)
 ```
 
 Open **http://127.0.0.1:8501** — use the sidebar to navigate.
 
+See [docs/running-locally.md](docs/running-locally.md) for conda and pip alternatives.
+
 ### Docker
 
-```bash
-cp .env.example .env            # fill in API keys
-docker compose up -d
-```
-
-Backend at **http://localhost:8000**, frontend at **http://localhost:8501**.
+> **Not currently supported.** `Dockerfile`s and `docker-compose.yml` are preserved for future use but are not tested and may not work out of the box.
 
 ---
 
 ## apt CLI
 
-The `apt` script manages backend and frontend processes locally.
+The `apt` CLI manages backend and frontend processes locally.
 
 ```bash
-./apt <command> [service]
+apt <command> [service]
 ```
 
 | Command | Description |
@@ -135,7 +129,7 @@ Logs are written to `.logs/backend.log` and `.logs/frontend.log` in the repo roo
 ### Search
 
 ```bash
-python -m apt_scrape.cli search \
+scr-apt search \
   --city milano \
   --area niguarda \
   --operation affitto \
@@ -169,7 +163,7 @@ python -m apt_scrape.cli search \
 ### Get a single listing
 
 ```bash
-python -m apt_scrape.cli detail --url "https://www.immobiliare.it/annunci/123456/"
+scr-apt detail --url "https://www.immobiliare.it/annunci/123456/"
 ```
 
 Auto-detects the site from the URL. Returns full JSON with all available fields.
@@ -177,7 +171,7 @@ Auto-detects the site from the URL. Returns full JSON with all available fields.
 ### Dump raw HTML
 
 ```bash
-python -m apt_scrape.cli dump --url "https://www.immobiliare.it/affitto-case/milano/" -o debug.html
+scr-apt dump --url "https://www.immobiliare.it/affitto-case/milano/" -o debug.html
 ```
 
 Useful for inspecting HTML when adjusting CSS selectors.
@@ -185,7 +179,7 @@ Useful for inspecting HTML when adjusting CSS selectors.
 ### List registered sites
 
 ```bash
-python -m apt_scrape.cli sites
+scr-apt sites
 ```
 
 ---
@@ -284,8 +278,8 @@ tail -f results/latest/batch/scrape_log_*.txt  # monitor progress
 ### Step 1: Dump the HTML
 
 ```bash
-python -m apt_scrape.cli dump --url "https://www.idealista.it/affitto-case/bologna/" -o idealista_search.html
-python -m apt_scrape.cli dump --url "https://www.idealista.it/immobile/12345/" -o idealista_detail.html
+scr-apt dump --url "https://www.idealista.it/affitto-case/bologna/" -o idealista_search.html
+scr-apt dump --url "https://www.idealista.it/immobile/12345/" -o idealista_detail.html
 ```
 
 Open in a browser and use DevTools to identify CSS selectors.
@@ -367,8 +361,8 @@ ADAPTERS: list[SiteAdapter] = [
 ### Step 4: Test and refine selectors
 
 ```bash
-python -m apt_scrape.cli search --city bologna --source idealista --max-price 900
-python -m apt_scrape.cli dump --url "https://www.idealista.it/affitto-case/bologna/" -o debug.html
+scr-apt search --city bologna --source idealista --max-price 900
+scr-apt dump --url "https://www.idealista.it/affitto-case/bologna/" -o debug.html
 ```
 
 ### When to Override
