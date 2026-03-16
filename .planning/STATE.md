@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-03-16T11:38:15.034Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-03-16T19:04:34.155Z"
 last_activity: 2026-03-16 — Roadmap created, 4 phases defined
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 2
-  completed_plans: 2
+  completed_phases: 3
+  total_plans: 3
+  completed_plans: 3
   percent: 100
 ---
 
@@ -60,6 +60,7 @@ Progress: [██████████] 100%
 | Phase 01 P01 | 10m | 2 tasks | 2 files |
 | Phase 01 P01 | 10m | 2 tasks | 2 files |
 | Phase 02-job-runner-reliability P01 | 5min | 2 tasks | 2 files |
+| Phase 03-llm-scoring-observability P01 | 12 | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,7 @@ Recent decisions affecting current work:
 - [Phase 01]: Phase 1: Use asyncio.Lock (stdlib) for _ensure_browser() — zero new dependencies, correct fix for async race
 - [Phase 01]: Phase 1: Use asyncio.Lock (stdlib) for _ensure_browser() — zero new dependencies, correct fix for async race
 - [Phase 02]: Phase 2: Use finally block for _flush_log() — closes BaseException gap with zero new dependencies, minimal 3-line diff
+- [Phase 03-llm-scoring-observability]: Log LLM skip warnings at _score_one level with listing URL; raise LLMParseError from _analyse_node fallback only when raw-JSON parse fails; keep safety-net except Exception in _score_one
 
 ### Pending Todos
 
@@ -87,6 +89,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-16T11:36:03.624Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-03-16T19:04:34.154Z
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None

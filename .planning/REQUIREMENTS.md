@@ -19,9 +19,9 @@ Requirements for this reliability milestone. Each maps to a roadmap phase.
 
 ### LLM Scoring Reliability
 
-- [ ] **LLM-01**: LLM fallback path distinguishes parse failures from API failures with distinct log messages and exception types
-- [ ] **LLM-02**: Listings that fail AI scoring are logged by listing ID so users can identify which ones were skipped
-- [ ] **LLM-03**: Unit test covers parse failure path and API failure path separately
+- [x] **LLM-01**: LLM fallback path distinguishes parse failures from API failures with distinct log messages and exception types
+- [x] **LLM-02**: Listings that fail AI scoring are logged by listing ID so users can identify which ones were skipped
+- [x] **LLM-03**: Unit test covers parse failure path and API failure path separately
 
 ### Notion Integration Reliability
 
@@ -69,9 +69,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BRWSR-02 | Phase 1 | Complete |
 | RUNNER-01 | Phase 2 | Complete |
 | RUNNER-02 | Phase 2 | Complete |
-| LLM-01 | Phase 3 | Pending |
-| LLM-02 | Phase 3 | Pending |
-| LLM-03 | Phase 3 | Pending |
+| LLM-01 | Phase 3 | Complete |
+| LLM-02 | Phase 3 | Complete |
+| LLM-03 | Phase 3 | Complete |
 | NOTION-01 | Phase 4 | Pending |
 | NOTION-02 | Phase 4 | Pending |
 
