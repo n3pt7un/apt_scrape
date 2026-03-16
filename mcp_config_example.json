@@ -1,9 +1,9 @@
 {
   "mcpServers": {
-    "rental-scraper": {
+    "rent-fetch": {
       "command": "python",
-      "args": ["server.py"],
-      "cwd": "/path/to/rental-scraper-mcp",
+      "args": ["-m", "apt_scrape.server"],
+      "cwd": "/path/to/rent-fetch",
       "env": {}
     }
   }

@@ -2,13 +2,13 @@ services:
   backend:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: src/backend/Dockerfile
     volumes:
       - .:/workspace          # repo root → apt_scrape importable via PYTHONPATH
       - ./data:/data          # SQLite + preferences.txt
     env_file: .env
     environment:
-      - PYTHONPATH=/workspace
+      - PYTHONPATH=/workspace/src
       - DB_PATH=/data/app.db
       - PREFERENCES_FILE=/data/preferences.txt
     network_mode: host
@@ -17,7 +17,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: frontend/Dockerfile
+      dockerfile: src/frontend/Dockerfile
     environment:
       - BACKEND_URL=http://localhost:8000
     depends_on:
