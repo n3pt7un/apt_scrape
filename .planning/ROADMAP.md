@@ -13,7 +13,7 @@ Four targeted bug fixes, each with a regression test, delivered in dependency or
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Browser Reliability** - Fix async race condition in `_ensure_browser()` with asyncio.Lock and cover with a concurrency test
-- [ ] **Phase 2: Job Runner Reliability** - Guarantee job log buffer flushes in a `finally` block and cover with a test that validates pre-exception messages persist
+- [x] **Phase 2: Job Runner Reliability** - Guarantee job log buffer flushes in a `finally` block and cover with a test that validates pre-exception messages persist (completed 2026-03-16)
 - [ ] **Phase 3: LLM Scoring Observability** - Distinguish parse vs API failures and log every skipped listing by ID, covered by separate failure-path tests
 - [ ] **Phase 4: Notion Fail-Fast** - Cause Notion pre-check API errors to raise rather than silently continue, covered by a test that verifies the exception
 
@@ -80,6 +80,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Browser Reliability | 0/TBD | Not started | - |
-| 2. Job Runner Reliability | 0/1 | Planning complete | - |
+| 2. Job Runner Reliability | 1/1 | Complete   | 2026-03-16 |
 | 3. LLM Scoring Observability | 0/TBD | Not started | - |
 | 4. Notion Fail-Fast | 0/TBD | Not started | - |

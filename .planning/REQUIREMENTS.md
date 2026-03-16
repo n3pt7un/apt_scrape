@@ -14,8 +14,8 @@ Requirements for this reliability milestone. Each maps to a roadmap phase.
 
 ### Job Runner Reliability
 
-- [ ] **RUNNER-01**: Job log buffer is flushed in a `finally` block so final error messages always persist to the database even if an exception occurs mid-job
-- [ ] **RUNNER-02**: Unit test verifies that log messages written before an exception are present in the Job record
+- [x] **RUNNER-01**: Job log buffer is flushed in a `finally` block so final error messages always persist to the database even if an exception occurs mid-job
+- [x] **RUNNER-02**: Unit test verifies that log messages written before an exception are present in the Job record
 
 ### LLM Scoring Reliability
 
@@ -67,8 +67,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | BRWSR-01 | Phase 1 | Complete |
 | BRWSR-02 | Phase 1 | Complete |
-| RUNNER-01 | Phase 2 | Pending |
-| RUNNER-02 | Phase 2 | Pending |
+| RUNNER-01 | Phase 2 | Complete |
+| RUNNER-02 | Phase 2 | Complete |
 | LLM-01 | Phase 3 | Pending |
 | LLM-02 | Phase 3 | Pending |
 | LLM-03 | Phase 3 | Pending |
