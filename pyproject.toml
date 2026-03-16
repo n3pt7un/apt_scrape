@@ -1,0 +1,52 @@
+[project]
+name = "apt-scrape"
+version = "0.1.0"
+description = "Scrape and monitor Italian real estate listings"
+requires-python = ">=3.11"
+
+dependencies = [
+    "mcp>=1.0.0",
+    "pydantic>=2.0.0",
+    "beautifulsoup4>=4.12.0",
+    "camoufox[geoip]>=0.4.0",
+    "lxml>=5.0.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "pproxy>=2.7.8",
+    "click>=8.1.0",
+    "langgraph>=0.2",
+    "langchain-openai>=0.2",
+    "langchain-core>=0.3",
+    "notion-client==2.2.1",
+]
+
+[project.optional-dependencies]
+backend = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.32.1",
+    "apscheduler==3.10.4",
+    "sqlmodel==0.0.21",
+    "aiofiles==24.1.0",
+    "httpx==0.28.1",
+]
+frontend = [
+    "streamlit==1.42.0",
+    "httpx==0.28.1",
+]
+
+[project.scripts]
+apt     = "apt_scrape.devctl:cli"
+scr-apt = "apt_scrape.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["apt_scrape", "backend", "frontend"]
