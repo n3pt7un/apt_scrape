@@ -325,6 +325,8 @@ class SiteConfig:
     # Milliseconds to wait for search_wait_selector to appear (default 15 s).
     # Increase for SPAs that take longer to hydrate (e.g. Casa.it ~45 s).
     search_wait_timeout: int = 15000
+    # URL for the site's login page (used by the `login` CLI command).
+    login_url: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -458,6 +460,7 @@ def config_from_dict(d: dict[str, Any]) -> SiteConfig:
         operation_map=d.get("operation_map", {}),
         page_load_wait=d.get("page_load_wait", "domcontentloaded"),
         search_wait_timeout=d.get("search_wait_timeout", 15000),
+        login_url=d.get("login_url", ""),
         search_selectors=SearchSelectors(
             listing_card=_sg(ss["listing_card"]),
             title=_sg(ss["title"]),
@@ -504,6 +507,7 @@ def config_to_dict(config: SiteConfig) -> dict[str, Any]:
         "operation_map": config.operation_map,
         "page_load_wait": config.page_load_wait,
         "search_wait_timeout": config.search_wait_timeout,
+        "login_url": config.login_url,
         "search_selectors": {
             "listing_card": sg_to_list(ss.listing_card),
             "title": sg_to_list(ss.title),

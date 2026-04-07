@@ -139,3 +139,5 @@ detail_selectors:
   costs_values:
     - "div.details-property_costs dd"
     - "[class*='costs'] dd"
+
+login_url: "https://www.idealista.it/login"

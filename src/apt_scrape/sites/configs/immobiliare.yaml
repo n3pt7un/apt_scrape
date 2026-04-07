@@ -118,3 +118,5 @@ detail_selectors:
   costs_values:
     - "[class*='cost'] dd"
     - "[class*='costs'] dd"
+
+login_url: "https://www.immobiliare.it/area-riservata/accesso/"

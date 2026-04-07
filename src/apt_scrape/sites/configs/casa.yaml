@@ -102,3 +102,5 @@ detail_selectors:
     - "[class*='chars_item'] [class*='chars__lbl']"
   costs_values:
     - "[class*='chars_item'] [class*='chars__cnt']"
+
+login_url: "https://www.casa.it/login/"
