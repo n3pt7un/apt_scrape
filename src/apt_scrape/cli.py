@@ -560,6 +560,84 @@ def sites() -> None:
 
 
 # ---------------------------------------------------------------------------
+# login
+# ---------------------------------------------------------------------------
+
+_DEFAULT_DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
+
+try:
+    from camoufox.async_api import AsyncCamoufox
+except ImportError:  # pragma: no cover
+    AsyncCamoufox = None  # type: ignore[assignment,misc]
+
+
+@cli.command("login")
+@click.option(
+    "--site",
+    required=True,
+    help="Site ID to log into (e.g. immobiliare, casa, idealista).",
+)
+@click.option(
+    "--identifier",
+    default="default",
+    show_default=True,
+    help="Label to distinguish cookie files when using multiple accounts.",
+)
+def login(site: str, identifier: str) -> None:
+    """Open a headed browser to log into a site and save session cookies.
+
+    After the browser opens, log in manually, then return to the terminal
+    and press Enter to capture cookies.
+    """
+    available_sites = list_adapters()
+    if site not in available_sites:
+        raise click.BadParameter(
+            f"'{site}' is not a registered site. Available: {', '.join(available_sites)}",
+            param_hint="--site",
+        )
+    asyncio.run(_run_login(site, identifier))
+
+
+async def _run_login(site_id: str, identifier: str) -> None:
+    """Async implementation of the login command."""
+    from apt_scrape.cookies import cookie_path, save_cookies
+
+    adapter = get_adapter(site_id)
+    login_url = adapter.config.login_url
+    if not login_url:
+        click.echo(f"Error: site '{site_id}' has no login_url configured.", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"Opening headed browser for {adapter.config.display_name}...", err=True)
+    click.echo(f"Login URL: {login_url}", err=True)
+
+    async with AsyncCamoufox(headless=False) as browser_instance:
+        context = await browser_instance.new_context()
+        page = await context.new_page()
+        await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+
+        click.echo(
+            "\nLog in to the site in the browser window.\n"
+            "When you're done, come back here and press Enter to save cookies.",
+            err=True,
+        )
+        click.pause("")
+
+        cookies = await context.cookies()
+        if not cookies:
+            click.echo("Warning: no cookies captured. Login may have failed.", err=True)
+        else:
+            path = cookie_path(site_id, identifier, data_dir=_DEFAULT_DATA_DIR)
+            save_cookies(cookies, path)
+            click.echo(f"Saved {len(cookies)} cookies to {path}", err=True)
+
+        await page.close()
+        await context.close()
+
+    click.echo("Done. Browser closed.", err=True)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
