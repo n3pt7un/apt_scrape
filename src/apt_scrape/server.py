@@ -132,26 +132,30 @@ class BrowserManager:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    async def _ensure_browser_unlocked(self) -> None:
+        """Start the Camoufox browser if not already running. Caller must hold ``_browser_lock``."""
+        if self._browser is not None:
+            if not self._browser.is_connected():
+                logger.warning("Browser disconnected unexpectedly. Cleaning up...")
+                await self._close_unlocked()
+
+        if self._browser is not None:
+            return
+
+        logger.info("Starting Camoufox browser...")
+        from camoufox.async_api import AsyncCamoufox
+
+        headless = os.getenv("BROWSER_HEADLESS", "true").lower() not in ("0", "false", "no")
+        logger.info("Camoufox headless=%s (set BROWSER_HEADLESS=false to show window)", headless)
+        self._camoufox_ctx = AsyncCamoufox(headless=headless)
+        self._browser = await self._camoufox_ctx.__aenter__()
+        logger.info("Camoufox browser started.")
+        await self._ensure_context()
+
     async def _ensure_browser(self) -> None:
         """Start the Camoufox browser if not already running."""
         async with self._browser_lock:
-            if self._browser is not None:
-                if not self._browser.is_connected():
-                    logger.warning("Browser disconnected unexpectedly. Cleaning up...")
-                    await self.close()
-
-            if self._browser is not None:
-                return
-
-            logger.info("Starting Camoufox browser...")
-            from camoufox.async_api import AsyncCamoufox
-
-            headless = os.getenv("BROWSER_HEADLESS", "true").lower() not in ("0", "false", "no")
-            logger.info("Camoufox headless=%s (set BROWSER_HEADLESS=false to show window)", headless)
-            self._camoufox_ctx = AsyncCamoufox(headless=headless)
-            self._browser = await self._camoufox_ctx.__aenter__()
-            logger.info("Camoufox browser started.")
-            await self._ensure_context()
+            await self._ensure_browser_unlocked()
 
     @staticmethod
     def _free_port() -> int:
@@ -334,8 +338,10 @@ class BrowserManager:
             err_str = str(exc).lower()
             if "targetclosederror" in str(type(exc)).lower() or "closed=true" in err_str or "handler is closed" in err_str:
                 logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
-                await self.close()
-                await self._ensure_browser()
+                async with self._browser_lock:
+                    if self._browser is None or not self._browser.is_connected():
+                        await self._close_unlocked()
+                        await self._ensure_browser_unlocked()
                 html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
             elif not self._proxy_list:
                 raise
@@ -409,8 +415,12 @@ class BrowserManager:
             err_str = str(exc).lower()
             if "targetclosederror" in str(type(exc)).lower() or "closed=true" in err_str or "handler is closed" in err_str:
                 logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
-                await self.close()
-                await self._ensure_browser()
+                async with self._browser_lock:
+                    # Re-check after acquiring lock — another coroutine may have
+                    # already reconnected while we were waiting.
+                    if self._browser is None or not self._browser.is_connected():
+                        await self._close_unlocked()
+                        await self._ensure_browser_unlocked()
                 html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
             elif not self._proxy_list:
                 raise
@@ -495,8 +505,8 @@ class BrowserManager:
         finally:
             await page.close()
 
-    async def close(self) -> None:
-        """Shut down the relay process, browser context, and browser."""
+    async def _close_unlocked(self) -> None:
+        """Shut down relay, context, and browser. Caller must hold ``_browser_lock``."""
         if self._relay_proc is not None:
             self._relay_proc.terminate()
             try:
@@ -516,7 +526,13 @@ class BrowserManager:
             except Exception as exc:
                 logger.debug("Error closing Camoufox: %s", exc)
             self._browser = None
+            self._camoufox_ctx = None
             logger.info("Browser closed.")
+
+    async def close(self) -> None:
+        """Shut down the relay process, browser context, and browser."""
+        async with self._browser_lock:
+            await self._close_unlocked()
 
 
 # Module-level singleton used by both ``apt_scrape.cli`` and the MCP tools.

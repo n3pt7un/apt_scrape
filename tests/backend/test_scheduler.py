@@ -33,3 +33,35 @@ def test_trigger_now_creates_background_task():
 def test_reload_config_does_not_raise_for_unknown_id():
     import backend.scheduler as sched
     sched.reload_config(99999)
+
+
+def test_job_wrapper_closes_browser_after_success():
+    """Browser should be closed after each scheduled job to prevent memory accumulation."""
+    from backend.scheduler import _run_job_wrapper
+
+    with (
+        patch("backend.scheduler.run_config_job", new_callable=AsyncMock) as mock_run,
+        patch("apt_scrape.server.browser") as mock_browser,
+    ):
+        mock_run.return_value = 1
+        mock_browser.close = AsyncMock()
+
+        asyncio.run(_run_job_wrapper(1))
+
+        mock_browser.close.assert_awaited_once()
+
+
+def test_job_wrapper_closes_browser_after_failure():
+    """Browser should be closed even when the job fails."""
+    from backend.scheduler import _run_job_wrapper
+
+    with (
+        patch("backend.scheduler.run_config_job", new_callable=AsyncMock) as mock_run,
+        patch("apt_scrape.server.browser") as mock_browser,
+    ):
+        mock_run.side_effect = RuntimeError("job exploded")
+        mock_browser.close = AsyncMock()
+
+        asyncio.run(_run_job_wrapper(1))
+
+        mock_browser.close.assert_awaited_once()

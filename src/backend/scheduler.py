@@ -36,6 +36,14 @@ async def _run_job_wrapper(config_id: int) -> None:
         await run_config_job(config_id, lambda msg: None)
     except Exception:
         logger.exception("Unhandled error in job for config %d", config_id)
+    finally:
+        # Restart the browser between jobs to prevent memory accumulation.
+        # _ensure_browser() will lazily start a fresh instance for the next job.
+        try:
+            from apt_scrape.server import browser
+            await browser.close()
+        except Exception:
+            logger.debug("Error closing browser after job", exc_info=True)
 
 
 async def start_scheduler() -> None:
