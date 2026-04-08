@@ -40,8 +40,8 @@ async def _run_job_wrapper(config_id: int) -> None:
         # Restart the browser between jobs to prevent memory accumulation.
         # _ensure_browser() will lazily start a fresh instance for the next job.
         try:
-            from apt_scrape.server import browser
-            await browser.close()
+            from apt_scrape.server import fetcher
+            await fetcher.close()
         except Exception:
             logger.debug("Error closing browser after job", exc_info=True)
 

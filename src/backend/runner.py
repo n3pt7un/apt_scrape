@@ -1,7 +1,7 @@
 """backend.runner — Core job execution pipeline.
 
-Pipeline order: scrape → enrich → post_dates → stamp → analyse → notion_push → upsert
-NEVER calls browser.close() — browser lifecycle is managed by FastAPI lifespan.
+Pipeline order: scrape → dedup → enrich → analyse → notion_push → upsert
+Uses the streaming Pipeline with Stage-based processing.
 """
 
 import asyncio
@@ -13,8 +13,7 @@ from typing import Callable
 
 from sqlmodel import Session, select as sql_select
 
-from apt_scrape.enrichment import enrich_post_dates, enrich_with_details
-from apt_scrape.server import browser
+from apt_scrape.server import fetcher
 from apt_scrape.sites import SearchFilters, get_adapter_with_overrides, list_adapters
 
 logger = logging.getLogger(__name__)
@@ -137,7 +136,7 @@ async def run_config_job(
                     _log(f"Fetching {pt}{a_name} page {page_num}: {url}")
                     page_load_wait = getattr(adapter.config, "page_load_wait", "domcontentloaded")
                     search_wait_timeout = getattr(adapter.config, "search_wait_timeout", 15000)
-                    html = await browser.fetch_page(url, wait_selector=adapter.config.search_wait_selector, wait_until=page_load_wait, wait_selector_timeout=search_wait_timeout)
+                    html = await fetcher.fetch(url, wait_selector=adapter.config.search_wait_selector, wait_timeout=search_wait_timeout / 1000, page_load_wait=page_load_wait)
                     if request_delay > 0:
                         await asyncio.sleep(request_delay)
                     page_listings = adapter.parse_search(html)
@@ -161,72 +160,53 @@ async def run_config_job(
 
                     _log(f"  -> {len(page_listings)} listings ({len(new_urls)} new)")
 
-        # Deduplicate by URL
+        # --- Pipeline processing ---
         scraped_count = len(all_listings)
-        seen: set[str] = set()
-        deduped: list[dict] = []
-        for listing in all_listings:
-            key = str(listing.get("url", "")).strip()
-            if key and key not in seen:
-                seen.add(key)
-                deduped.append(listing)
-        dupes_removed = scraped_count - len(deduped)
-        _log(f"Total unique listings: {len(deduped)} ({dupes_removed} dupes removed)")
 
-        # 2a. Check Notion duplicates upfront
-        to_enrich = deduped
-        if auto_notion_push:
-            _log("Checking Notion for already-pushed listings to skip enrichment...")
-            try:
-                from apt_scrape.notion_push import mark_notion_duplicates
-                num_skipped = await mark_notion_duplicates(deduped)
-                if num_skipped > 0:
-                    _log(f"Found {num_skipped} listings already in Notion. Skipping heavy enrichment for them.")
-                to_enrich = [L for L in deduped if not L.get("notion_skipped")]
-            except Exception as e:
-                _log(f"[warn] Failed to do Notion pre-check: {e}")
+        from apt_scrape.pipeline import Pipeline
+        from apt_scrape.stages import DedupStage, EnrichStage, AnalyseStage, NotionPushStage
 
-        # 3. Enrich details
-        if to_enrich:
-            _log(f"Enriching details for {len(to_enrich)} listings (concurrency={detail_concurrency})...")
-            await enrich_with_details(
-                to_enrich, browser, adapter, None,
-                concurrency=detail_concurrency,
-                rotate_every_batches=vpn_rotate_batches,
-            )
+        dedup = DedupStage()
+        stages: list = [dedup]
 
-            # 4. Enrich post dates
-            await enrich_post_dates(
-                to_enrich, browser, adapter,
-                concurrency=detail_concurrency,
-                rotate_every_batches=vpn_rotate_batches,
-            )
-        else:
-            _log("No new listings require enrichment.")
+        stages.append(EnrichStage(fetcher, adapter))
 
-        # 5. Stamp area/city
-        for listing in deduped:
-            listing["_area"] = listing.pop("_search_area", "")
-            listing["_city"] = city_slug
-
-        # 6. AI Analysis
-        ai_usage: dict = {}
-        if auto_analyse and to_enrich:
-            _log("Running AI analysis...")
-            from apt_scrape.analysis import analyse_listings, load_preferences
+        if auto_analyse:
+            from apt_scrape.analysis import load_preferences
             try:
                 prefs = load_preferences()
-                ai_usage = await analyse_listings(to_enrich, prefs)
-                _log(f"Analysis complete. ~{ai_usage.get('tokens_used', 0)} tokens, ${ai_usage.get('cost_usd', 0):.4f}")
+                stages.append(AnalyseStage(prefs))
             except FileNotFoundError:
                 _log("[warn] preferences.txt not found — skipping analysis.")
 
-        # 7. Notion Push
-        if auto_notion_push and deduped:
-            _log("Pushing to Notion...")
-            from apt_scrape.notion_push import push_listings
-            await push_listings(deduped)
-            _log("Notion push complete.")
+        if auto_notion_push:
+            stages.append(NotionPushStage())
+
+        pipeline = Pipeline(stages)
+        for listing_dict in all_listings:
+            await pipeline.push(listing_dict)
+        await pipeline.finish()
+
+        stats = pipeline.stats()
+        _log(f"Pipeline stats: {stats}")
+
+        # Stamp area/city on all listings
+        for listing in all_listings:
+            listing["_area"] = listing.pop("_search_area", "")
+            listing["_city"] = city_slug
+
+        # Collect deduplicated results for DB upsert
+        # The dedup stage tracked unique URLs — rebuild from all_listings
+        deduped = []
+        seen_urls = set()
+        for listing in all_listings:
+            url = str(listing.get("url", "")).strip()
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                deduped.append(listing)
+
+        dupes_removed = scraped_count - len(deduped)
+        _log(f"Total unique listings: {len(deduped)} ({dupes_removed} dupes removed)")
 
         # 8. Upsert listings to DB
         _log("Upserting listings to DB...")
@@ -274,8 +254,8 @@ async def run_config_job(
             job.listing_count = len(deduped)
             job.scraped_count = scraped_count
             job.dupes_removed = dupes_removed
-            job.ai_tokens_used = ai_usage.get("tokens_used")
-            job.ai_cost_usd = ai_usage.get("cost_usd")
+            job.ai_tokens_used = None
+            job.ai_cost_usd = None
             job.area_stats = json.dumps(area_stats)
             session.add(job)
             session.commit()

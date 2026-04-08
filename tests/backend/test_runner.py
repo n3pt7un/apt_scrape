@@ -42,19 +42,20 @@ def test_run_config_job_creates_job_record():
     fake_listings = [_make_fake_listing()]
 
     with (
-        patch("backend.runner.browser") as mock_browser,
+        patch("backend.runner.fetcher") as mock_fetcher,
         patch("backend.runner.get_adapter_with_overrides") as mock_get_adapter,
-        patch("backend.runner.enrich_with_details", new_callable=AsyncMock) as mock_enrich,
-        patch("backend.runner.enrich_post_dates", new_callable=AsyncMock) as mock_post_dates,
+        patch("apt_scrape.stages.EnrichStage.process", new_callable=AsyncMock) as mock_enrich_process,
     ):
-        mock_browser.fetch_page = AsyncMock(return_value=fake_html)
+        mock_fetcher.fetch = AsyncMock(return_value=fake_html)
+        mock_fetcher.fetch_with_retry = AsyncMock(return_value=fake_html)
+        mock_enrich_process.side_effect = lambda self, item: item  # pass-through
         mock_adapter = MagicMock()
         mock_adapter.build_search_url.return_value = "https://example.com/search"
         mock_adapter.parse_search.return_value = fake_listings
         mock_adapter.config.search_wait_selector = None
+        mock_adapter.config.detail_wait_selector = None
+        mock_adapter.config.search_wait_timeout = 15000
         mock_get_adapter.return_value = mock_adapter
-        mock_enrich.return_value = (1, [])
-        mock_post_dates.return_value = (0, [])
 
         job_id = asyncio.run(backend_runner_run(config_id, logs.append))
 
@@ -71,12 +72,11 @@ def test_log_persists_on_mid_job_exception():
     logs = []
 
     with (
-        patch("backend.runner.browser") as mock_browser,
+        patch("backend.runner.fetcher") as mock_fetcher,
         patch("backend.runner.get_adapter_with_overrides") as mock_get_adapter,
-        patch("backend.runner.enrich_with_details", new_callable=AsyncMock),
-        patch("backend.runner.enrich_post_dates", new_callable=AsyncMock),
     ):
-        mock_browser.fetch_page = AsyncMock(side_effect=asyncio.CancelledError("simulated cancel"))
+        mock_fetcher.fetch = AsyncMock(side_effect=asyncio.CancelledError("simulated cancel"))
+        mock_fetcher.fetch_with_retry = AsyncMock(side_effect=asyncio.CancelledError("simulated cancel"))
         mock_adapter = MagicMock()
         mock_adapter.build_search_url.return_value = "https://example.com/search"
         mock_adapter.parse_search.return_value = []

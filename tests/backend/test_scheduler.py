@@ -41,14 +41,14 @@ def test_job_wrapper_closes_browser_after_success():
 
     with (
         patch("backend.scheduler.run_config_job", new_callable=AsyncMock) as mock_run,
-        patch("apt_scrape.server.browser") as mock_browser,
+        patch("apt_scrape.server.fetcher") as mock_fetcher,
     ):
         mock_run.return_value = 1
-        mock_browser.close = AsyncMock()
+        mock_fetcher.close = AsyncMock()
 
         asyncio.run(_run_job_wrapper(1))
 
-        mock_browser.close.assert_awaited_once()
+        mock_fetcher.close.assert_awaited_once()
 
 
 def test_job_wrapper_closes_browser_after_failure():
@@ -57,11 +57,11 @@ def test_job_wrapper_closes_browser_after_failure():
 
     with (
         patch("backend.scheduler.run_config_job", new_callable=AsyncMock) as mock_run,
-        patch("apt_scrape.server.browser") as mock_browser,
+        patch("apt_scrape.server.fetcher") as mock_fetcher,
     ):
         mock_run.side_effect = RuntimeError("job exploded")
-        mock_browser.close = AsyncMock()
+        mock_fetcher.close = AsyncMock()
 
         asyncio.run(_run_job_wrapper(1))
 
-        mock_browser.close.assert_awaited_once()
+        mock_fetcher.close.assert_awaited_once()
