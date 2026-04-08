@@ -612,59 +612,58 @@ class SiteAdapter(ABC):
 
     # --- Rejection detection ----------------------------------------------------
 
+    # Phrases indicating a site-level rejection (HTTP 200 but error content).
+    _REJECTION_PHRASES = (
+        "too many requests",
+        "rate limit",
+        "temporarily unavailable",
+        "service unavailable",
+        "please try again later",
+        "riprova più tardi",
+        "troppi tentativi",
+        "troppe richieste",
+        "errore del server",
+        "internal server error",
+        "si è verificato un errore",
+    )
+
+    _ERROR_CODE_RE = re.compile(
+        r"\b(?:error|errore|código)\s*(\d{3})\b", re.IGNORECASE
+    )
+
     def detect_rejection(self, html: str) -> str | None:
         """Check if the page content indicates the site rejected the request.
 
-        Sites sometimes return HTTP 200 but with an error message in the body
-        (e.g. "too many requests", "service unavailable", rate-limit pages).
+        Uses lightweight regex/string checks (no DOM parsing) so it can run
+        on every fetch without meaningful overhead.  ``detect_block`` in
+        ``browser.py`` already handles bot-detection pages (CAPTCHA, DataDome,
+        tiny responses); this method catches application-level rejections
+        (rate-limit pages, error pages served as HTTP 200).
+
         Override in subclasses for site-specific rejection patterns.
-
-        Args:
-            html: Raw HTML string of the fetched page.
-
-        Returns:
-            A short reason string if rejection is detected, or ``None`` if
-            the page looks normal.
         """
         if not html:
             return "empty response"
 
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, "lxml")
-        title = (soup.title.get_text(strip=True).lower() if soup.title else "")
-        body_text = (soup.body.get_text(" ", strip=True).lower()[:2000] if soup.body else "")
+        # Extract title via regex (same approach as detect_block)
+        title = ""
+        title_match = re.search(
+            r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL
+        )
+        if title_match:
+            title = title_match.group(1).strip().lower()
 
-        # Generic rejection patterns (HTTP error pages served as 200)
-        rejection_phrases = [
-            "too many requests",
-            "rate limit",
-            "temporarily unavailable",
-            "service unavailable",
-            "please try again later",
-            "riprova più tardi",
-            "troppi tentativi",
-            "troppe richieste",
-            "errore del server",
-            "internal server error",
-            "si è verificato un errore",
-        ]
-        for phrase in rejection_phrases:
-            if phrase in title or phrase in body_text:
+        # Check a slice of raw HTML for rejection phrases
+        sample = html[:5000].lower()
+        for phrase in self._REJECTION_PHRASES:
+            if phrase in title or phrase in sample:
                 return f"rejection detected: '{phrase}'"
 
-        # Error code patterns in title (e.g. "Error 503", "Errore 429")
-        import re
-        error_code_match = re.search(
-            r"\b(?:error|errore|código)\s*(\d{3})\b", title
-        )
-        if error_code_match:
-            code = error_code_match.group(1)
-            if code in ("403", "429", "500", "502", "503", "504"):
-                return f"error code {code} in page title"
-
-        # Abnormally small response — real listing/search pages are much larger
-        if len(html) < 2000:
-            return f"abnormally small response ({len(html)} bytes)"
+        # Error code in title (e.g. "Error 503", "Errore 429")
+        if title:
+            m = self._ERROR_CODE_RE.search(title)
+            if m and m.group(1) in ("403", "429", "500", "502", "503", "504"):
+                return f"error code {m.group(1)} in page title"
 
         return None
 

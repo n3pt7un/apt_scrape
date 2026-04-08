@@ -19,6 +19,7 @@ import os
 import re
 import socket
 import sys
+from collections.abc import Callable
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -268,7 +269,7 @@ class Fetcher:
         wait_selector: str | None = None,
         wait_timeout: float = 15.0,
         max_attempts: int = 3,
-        rejection_checker: Any | None = None,
+        rejection_checker: Callable[[str], str | None] | None = None,
         page_load_wait: str = "networkidle",
     ) -> str:
         """Fetch with proxy rotation on block detection.

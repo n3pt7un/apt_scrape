@@ -130,13 +130,16 @@ def _stop_service(name: str) -> bool:
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+_ALL_SERVICES = click.Choice(["all", "backend", "frontend"])
+_SINGLE_SERVICE = click.Choice(["backend", "frontend"])
+
 @click.group()
 def cli():
     """apt_scrape local dev CLI."""
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
+@click.argument("service", default="all", type=_ALL_SERVICES)
 @click.option("--wait", default=3, show_default=True, help="Seconds to wait before printing URLs.")
 def start(service: str, wait: int):
     """Start backend or all services."""
@@ -156,7 +159,7 @@ def start(service: str, wait: int):
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
+@click.argument("service", default="all", type=_ALL_SERVICES)
 def stop(service: str):
     """Stop backend or all services."""
     names = list(SERVICES) if service == "all" else [service]
@@ -166,7 +169,7 @@ def stop(service: str):
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
+@click.argument("service", default="all", type=_ALL_SERVICES)
 def restart(service: str):
     """Restart backend or all services."""
     names = list(SERVICES) if service == "all" else [service]
@@ -192,7 +195,7 @@ def status():
 
 
 @cli.command()
-@click.argument("service", type=click.Choice(["backend", "frontend"]))
+@click.argument("service", type=_SINGLE_SERVICE)
 @click.option("-n", "--lines", default=50, show_default=True, help="Number of lines to show.")
 @click.option("-f", "--follow", "--stream", is_flag=True, help="Stream log output continuously (like tail -f).")
 def logs(service: str, lines: int, follow: bool):

@@ -134,14 +134,12 @@ async def run_config_job(
                     url = adapter.build_search_url(filters)
                     a_name = f" (area: {area_slug})" if area_slug else ""
                     _log(f"Fetching {pt}{a_name} page {page_num}: {url}")
-                    page_load_wait = getattr(adapter.config, "page_load_wait", "domcontentloaded")
-                    search_wait_timeout = getattr(adapter.config, "search_wait_timeout", 15000)
                     html = await fetcher.fetch_with_retry(
                         url,
                         wait_selector=adapter.config.search_wait_selector,
-                        wait_timeout=search_wait_timeout / 1000,
+                        wait_timeout=adapter.config.search_wait_timeout / 1000,
                         rejection_checker=adapter.detect_rejection,
-                        page_load_wait=page_load_wait,
+                        page_load_wait=adapter.config.page_load_wait,
                     )
                     if request_delay > 0:
                         await asyncio.sleep(request_delay)
