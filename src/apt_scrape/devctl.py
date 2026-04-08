@@ -42,6 +42,19 @@ SERVICES = {
         "cwd": str(REPO_ROOT),
         "url": "http://localhost:8000/health",
     },
+    "frontend": {
+        "cmd": lambda: [
+            _find_bin("streamlit"), "run",
+            str(REPO_ROOT / "src" / "frontend" / "app.py"),
+            "--server.port", "8501",
+            "--server.headless", "true",
+        ],
+        "env": {
+            "PYTHONPATH": str(REPO_ROOT / "src"),
+        },
+        "cwd": str(REPO_ROOT),
+        "url": "http://localhost:8501",
+    },
 }
 
 
@@ -123,7 +136,7 @@ def cli():
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend"]))
+@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
 @click.option("--wait", default=3, show_default=True, help="Seconds to wait before printing URLs.")
 def start(service: str, wait: int):
     """Start backend or all services."""
@@ -143,7 +156,7 @@ def start(service: str, wait: int):
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend"]))
+@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
 def stop(service: str):
     """Stop backend or all services."""
     names = list(SERVICES) if service == "all" else [service]
@@ -153,7 +166,7 @@ def stop(service: str):
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend"]))
+@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
 def restart(service: str):
     """Restart backend or all services."""
     names = list(SERVICES) if service == "all" else [service]
@@ -179,7 +192,7 @@ def status():
 
 
 @cli.command()
-@click.argument("service", type=click.Choice(["backend"]))
+@click.argument("service", type=click.Choice(["backend", "frontend"]))
 @click.option("-n", "--lines", default=50, show_default=True, help="Number of lines to show.")
 @click.option("-f", "--follow", "--stream", is_flag=True, help="Stream log output continuously (like tail -f).")
 def logs(service: str, lines: int, follow: bool):

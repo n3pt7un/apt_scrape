@@ -55,7 +55,7 @@ VPN_ROTATE_EVERY_BATCHES = int(os.getenv("VPN_ROTATE_EVERY_BATCHES", "3"))
 
 
 # ---------------------------------------------------------------------------
-# Fetcher singleton (nodriver-based)
+# Fetcher singleton (Camoufox-based)
 # ---------------------------------------------------------------------------
 _proxy = create_proxy_provider()
 # DataDome detects headless=True — default to False (shows browser window).
@@ -271,7 +271,7 @@ async def search_listings(params: SearchListingsInput) -> str:
     """Search for rental or sale property listings.
 
     Builds a search URL from *params*, fetches result pages via a stealth
-    browser (nodriver), and parses listing cards into structured JSON.
+    browser (Camoufox), and parses listing cards into structured JSON.
 
     Args:
         params: Validated search parameters.
@@ -480,7 +480,7 @@ async def list_sites() -> str:
 async def dump_page(params: DumpPageInput) -> str:
     """Fetch a page and return raw HTML for debugging selectors.
 
-    Captures HTML after JavaScript rendering via nodriver.
+    Captures HTML after JavaScript rendering via Camoufox.
 
     Args:
         params: Input with ``url`` and optional ``wait_selector``.

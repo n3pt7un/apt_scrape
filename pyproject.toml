@@ -30,9 +30,6 @@ backend = [
     "aiofiles==24.1.0",
     "httpx==0.28.1",
 ]
-tui = [
-    "textual>=1.0.0",
-]
 frontend = [
     "streamlit>=1.45.0",
     "plotly>=6.0.0",
