@@ -5,8 +5,8 @@ Each site (Immobiliare.it, Casa.it, …) is a self-contained plugin in
 ``apt_scrape/sites/``.
 
 Environment variables (all optional):
-    IPROYAL_HOST / IPROYAL_USER / IPROYAL_PASS: IPRoyal proxy credentials.
-    BROWSER_HEADLESS: Set to "false" to show browser window.
+    IPROYAL_HOST, IPROYAL_PORT, IPROYAL_USER, IPROYAL_PASS: IPRoyal proxy.
+    BROWSER_HEADLESS: "true" (default) or "false" to show the browser window.
 """
 
 import asyncio
@@ -25,8 +25,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from apt_scrape.browser import Fetcher
 from apt_scrape.enrichment import enrich_post_dates, enrich_with_details
-from apt_scrape.proxy import create_proxy_provider
 from apt_scrape.export import listings_to_csv, listings_to_markdown_table
+from apt_scrape.proxy import create_proxy_provider
 from apt_scrape.sites import (
     SearchFilters,
     adapter_for_url,
@@ -55,13 +55,17 @@ VPN_ROTATE_EVERY_BATCHES = int(os.getenv("VPN_ROTATE_EVERY_BATCHES", "3"))
 
 
 # ---------------------------------------------------------------------------
-# Browser (nodriver) — module-level singleton
+# Fetcher singleton (nodriver-based)
 # ---------------------------------------------------------------------------
 _proxy = create_proxy_provider()
-fetcher = Fetcher(
-    proxy_provider=_proxy,
-    headless=os.getenv("BROWSER_HEADLESS", "true").lower() not in ("0", "false", "no"),
-)
+# DataDome detects headless=True — default to False (shows browser window).
+# On Linux servers, use BROWSER_HEADLESS=virtual for Xvfb-based headless.
+_headless_raw = os.getenv("BROWSER_HEADLESS", "false").lower()
+if _headless_raw == "virtual":
+    _headless: bool | str = "virtual"
+else:
+    _headless = _headless_raw not in ("0", "false", "no")
+fetcher = Fetcher(proxy_provider=_proxy, headless=_headless)
 
 
 # ---------------------------------------------------------------------------
@@ -328,9 +332,7 @@ async def search_listings(params: SearchListingsInput) -> str:
 
         try:
             html = await fetcher.fetch_with_retry(
-                url,
-                wait_selector=adapter.config.search_wait_selector,
-                wait_timeout=adapter.config.search_wait_timeout / 1000,
+                url, wait_selector=adapter.config.search_wait_selector
             )
         except Exception as exc:
             return _json({"error": f"Failed to fetch page {page_num}: {exc}", "url": url})
@@ -437,8 +439,7 @@ async def get_listing_detail(params: GetListingDetailInput) -> str:
 
     try:
         html = await fetcher.fetch_with_retry(
-            url,
-            wait_selector=adapter.config.detail_wait_selector,
+            url, wait_selector=adapter.config.detail_wait_selector
         )
     except Exception as exc:
         return _json({"error": f"Failed to fetch listing: {exc}", "url": url})

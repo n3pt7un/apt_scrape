@@ -33,25 +33,21 @@ def test_iproyal_proxy_url():
     )
     provider = IPRoyalProvider(config)
     url = provider.get_proxy_url()
-    # URL includes session/country suffixes in the username
-    assert url.startswith("http://user_country-it_session-")
-    assert url.endswith(":pass@geo.iproyal.com:12321")
+    # Raw credentials — no suffixes (suffixes break IPRoyal auth)
+    assert url == "http://user:pass@geo.iproyal.com:12321"
 
 
-def test_iproyal_rotate_changes_session():
+def test_iproyal_host_port():
     config = ProxyConfig(
         host="geo.iproyal.com",
         port=12321,
         username="user",
-        password="pass_session-abc123",
+        password="pass",
         protocol="http",
     )
     provider = IPRoyalProvider(config)
-    url1 = provider.get_proxy_url()
-    provider.rotate()
-    url2 = provider.get_proxy_url()
-    # Session ID should change after rotation
-    assert url1 != url2
+    assert provider.get_proxy_host_port() == "http://geo.iproyal.com:12321"
+    assert provider.get_proxy_credentials() == ("user", "pass")
 
 
 def test_iproyal_sticky_session():

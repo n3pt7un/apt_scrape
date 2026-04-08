@@ -57,6 +57,14 @@ class ProxyProvider(ABC):
     def get_proxy_url(self) -> str | None:
         """Return the current proxy URL, or None if no proxy."""
 
+    def get_proxy_host_port(self) -> str | None:
+        """Return scheme://host:port (no credentials) for --proxy-server flag."""
+        return None
+
+    def get_proxy_credentials(self) -> tuple[str, str] | None:
+        """Return (username, password) or None if no auth needed."""
+        return None
+
     @abstractmethod
     def rotate(self) -> None:
         """Force rotation to a new proxy/session."""
@@ -101,14 +109,8 @@ class IPRoyalProvider(ProxyProvider):
         return uuid.uuid4().hex[:12]
 
     def _build_username(self) -> str:
-        """Build username with session suffix for IP control."""
-        parts = [self._config.username]
-        if self._config.country:
-            parts.append(f"country-{self._config.country}")
-        parts.append(f"session-{self._session_id}")
-        if self._config.sticky_session_minutes > 0:
-            parts.append(f"sessionTime-{self._config.sticky_session_minutes}")
-        return "_".join(parts)
+        """Build username — use raw credentials (suffixes break IPRoyal auth)."""
+        return self._config.username
 
     def get_proxy_url(self) -> str:
         username = self._build_username()
@@ -116,6 +118,12 @@ class IPRoyalProvider(ProxyProvider):
             f"{self._config.protocol}://{username}:{self._base_password}"
             f"@{self._config.host}:{self._config.port}"
         )
+
+    def get_proxy_host_port(self) -> str:
+        return f"{self._config.protocol}://{self._config.host}:{self._config.port}"
+
+    def get_proxy_credentials(self) -> tuple[str, str]:
+        return (self._build_username(), self._base_password)
 
     def rotate(self) -> None:
         old = self._session_id
