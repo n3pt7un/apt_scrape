@@ -122,6 +122,27 @@ def get_job(job_id: int, session: Session = Depends(get_session)):
     return job.model_dump()
 
 
+@router.post("/{job_id}/cancel")
+def cancel_job(job_id: int, session: Session = Depends(get_session)):
+    """Cancel a running job — signals the runner to stop and closes the browser."""
+    job = session.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.status != "running":
+        raise HTTPException(400, f"Job is not running (status={job.status})")
+
+    from backend.scheduler import cancel_job as _cancel
+    cancelled = _cancel(job_id)
+    if not cancelled:
+        # Task not tracked — force-mark as failed
+        job.status = "failed"
+        from datetime import datetime
+        job.finished_at = datetime.utcnow()
+        session.add(job)
+        session.commit()
+    return {"cancelled": True, "job_id": job_id}
+
+
 @router.delete("/{job_id}", status_code=204)
 def delete_job(job_id: int, session: Session = Depends(get_session)):
     job = session.get(Job, job_id)

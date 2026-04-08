@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 _scheduler = AsyncIOScheduler(timezone="UTC")
 
+# Track running tasks: job_id -> (asyncio.Task, asyncio.Event)
+_running_tasks: dict[int, tuple[asyncio.Task, asyncio.Event]] = {}
+
 DAY_MAP = {
     "mon": "mon", "tue": "tue", "wed": "wed", "thu": "thu",
     "fri": "fri", "sat": "sat", "sun": "sun",
@@ -32,13 +35,25 @@ def _build_trigger(schedule_days: list[str], schedule_time: str) -> CronTrigger:
 
 
 async def _run_job_wrapper(config_id: int) -> None:
+    cancel_event = asyncio.Event()
+    job_id = None
     try:
-        await run_config_job(config_id, lambda msg: None)
+        # Create job record first so we can track it
+        with Session(engine) as session:
+            job = Job(config_id=config_id, status="pending", triggered_by="schedule")
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+            job_id = job.id
+        task = asyncio.current_task()
+        if job_id and task:
+            _running_tasks[job_id] = (task, cancel_event)
+        await run_config_job(config_id, lambda msg: None, existing_job_id=job_id, cancel_event=cancel_event)
     except Exception:
         logger.exception("Unhandled error in job for config %d", config_id)
     finally:
-        # Restart the browser between jobs to prevent memory accumulation.
-        # _ensure_browser() will lazily start a fresh instance for the next job.
+        if job_id:
+            _running_tasks.pop(job_id, None)
         try:
             from apt_scrape.server import fetcher
             await fetcher.close()
@@ -107,13 +122,42 @@ def trigger_now(config_id: int) -> int:
         session.refresh(job)
         job_id = job.id
 
+    cancel_event = asyncio.Event()
+
     async def _run():
-        await run_config_job(config_id, lambda msg: None, existing_job_id=job_id)
+        try:
+            await run_config_job(config_id, lambda msg: None, existing_job_id=job_id, cancel_event=cancel_event)
+        finally:
+            _running_tasks.pop(job_id, None)
 
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(_run())
+        task = loop.create_task(_run())
+        _running_tasks[job_id] = (task, cancel_event)
     except RuntimeError:
         asyncio.run(_run())
 
     return job_id
+
+
+def cancel_job(job_id: int) -> bool:
+    """Cancel a running job. Returns True if found and cancelled."""
+    entry = _running_tasks.get(job_id)
+    if not entry:
+        return False
+    task, cancel_event = entry
+    cancel_event.set()  # Signal the runner to stop
+    # Also close the browser to interrupt any in-progress fetch
+    async def _close_browser():
+        try:
+            from apt_scrape.server import fetcher
+            await fetcher.close()
+        except Exception:
+            pass
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_close_browser())
+    except RuntimeError:
+        pass
+    return True

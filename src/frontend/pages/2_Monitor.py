@@ -70,8 +70,13 @@ def render(jobs):
                     st.caption(f"Started: {str(job.get('started_at', '—'))[:19]}")
                 with c2:
                     st.caption(f"Triggered by: {job.get('triggered_by', '—')}")
-                    if st.button("Cancel & Delete", key=f"del_run_{job['id']}", use_container_width=True):
-                        api.delete(f"/jobs/{job['id']}")
+                    if st.button("⏹ Cancel", key=f"cancel_{job['id']}", type="primary", use_container_width=True):
+                        try:
+                            api.post(f"/jobs/{job['id']}/cancel")
+                            st.success("Job cancelled. Browser closing...")
+                        except Exception as e:
+                            st.error(f"Cancel failed: {e}")
+                        time.sleep(2)
                         st.rerun()
                 log_lines = (job.get("log") or "").strip().split("\n")
                 st.code("\n".join(log_lines[-10:]), language=None)

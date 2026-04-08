@@ -28,10 +28,15 @@ def _parse_property_types(raw: str) -> list[str]:
     return types or ["appartamenti"]
 
 
+class JobCancelled(Exception):
+    """Raised when a running job is cancelled."""
+
+
 async def run_config_job(
     config_id: int,
     log_fn: Callable[[str], None],
     existing_job_id: int | None = None,
+    cancel_event: asyncio.Event | None = None,
 ) -> int:
     """Execute a scraping job for the given config. Returns job_id."""
     from backend.db import Job, Listing, SearchConfig, engine
@@ -54,6 +59,10 @@ async def run_config_job(
             session.commit()
             session.refresh(job)
             job_id = job.id
+
+    def _check_cancel():
+        if cancel_event and cancel_event.is_set():
+            raise JobCancelled(f"Job {job_id} cancelled")
 
     _log_buffer: list[str] = []
 
@@ -124,6 +133,7 @@ async def run_config_job(
             for pt in property_types:
                 seen_in_run: set[str] = set()  # track URLs within this area/pt run to detect redirect loops
                 for page_num in range(start_page, end_page + 1):
+                    _check_cancel()
                     if page_num > start_page and page_delay > 0:
                         await asyncio.sleep(page_delay)
                     filters = SearchFilters(
@@ -188,6 +198,7 @@ async def run_config_job(
 
         pipeline = Pipeline(stages)
         for listing_dict in all_listings:
+            _check_cancel()
             await pipeline.push(listing_dict)
         await pipeline.finish()
 
@@ -277,6 +288,17 @@ async def run_config_job(
         _log(f"Job complete. {len(deduped)} listings processed.")
         return job_id
 
+    except JobCancelled:
+        logger.info("Job %d cancelled", job_id)
+        _log("[CANCELLED] Job was cancelled by user.")
+        with Session(engine) as session:
+            job = session.get(Job, job_id)
+            if job:
+                job.status = "failed"
+                job.finished_at = datetime.utcnow()
+                session.add(job)
+                session.commit()
+        return job_id
     except Exception as exc:
         logger.exception("Job %d failed", job_id)
         _log(f"[ERROR] {exc}")
