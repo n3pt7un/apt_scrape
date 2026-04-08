@@ -117,8 +117,8 @@ class ImmobiliareAdapter(SiteAdapter):
 
         href = extract_attr(title_el, "href")
         if not href:
-            any_link = card.select_one("a[href]")
-            href = extract_attr(any_link, "href")
+            listing_link = card.select_one("a[href*='/annunci/']")
+            href = extract_attr(listing_link, "href")
         if href and not href.startswith("http"):
             href = urljoin(self.config.base_url, href)
 

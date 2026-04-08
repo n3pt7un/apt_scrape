@@ -123,3 +123,4 @@ login_url: "https://www.immobiliare.it/"
 
 min_request_delay: 2.0
 max_request_delay: 4.0
+detail_url_contains: "/annunci/"

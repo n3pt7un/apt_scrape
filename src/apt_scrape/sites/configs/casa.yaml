@@ -107,3 +107,4 @@ login_url: "https://www.casa.it/login/"
 
 min_request_delay: 3.0
 max_request_delay: 6.0
+detail_url_contains: "/immobili/"

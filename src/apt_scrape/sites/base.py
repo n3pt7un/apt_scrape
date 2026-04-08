@@ -330,6 +330,10 @@ class SiteConfig:
     # Per-site rate limiting: jittered delay range between requests.
     min_request_delay: float = 2.0
     max_request_delay: float = 4.0
+    # Substring that must appear in a listing detail URL.
+    # Used to filter out non-listing links (nav, agency, filter pages)
+    # extracted by the search parser's fallback href logic.
+    detail_url_contains: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -466,6 +470,7 @@ def config_from_dict(d: dict[str, Any]) -> SiteConfig:
         login_url=d.get("login_url", ""),
         min_request_delay=d.get("min_request_delay", 2.0),
         max_request_delay=d.get("max_request_delay", 4.0),
+        detail_url_contains=d.get("detail_url_contains", ""),
         search_selectors=SearchSelectors(
             listing_card=_sg(ss["listing_card"]),
             title=_sg(ss["title"]),
@@ -515,6 +520,7 @@ def config_to_dict(config: SiteConfig) -> dict[str, Any]:
         "login_url": config.login_url,
         "min_request_delay": config.min_request_delay,
         "max_request_delay": config.max_request_delay,
+        "detail_url_contains": config.detail_url_contains,
         "search_selectors": {
             "listing_card": sg_to_list(ss.listing_card),
             "title": sg_to_list(ss.title),
@@ -759,10 +765,15 @@ class SiteAdapter(ABC):
                 body_text,
             )
 
+        url_filter = self.config.detail_url_contains
         for card in cards:
             try:
                 listing = self._parse_one_card(card, sels)
                 if listing.url:
+                    # Skip non-listing URLs (agency pages, filter links, etc.)
+                    if url_filter and url_filter not in listing.url:
+                        logger.debug("Skipping non-listing URL: %s", listing.url)
+                        continue
                     listings.append(listing)
             except Exception as exc:
                 logger.debug("Skipping unparseable card: %s", exc)
