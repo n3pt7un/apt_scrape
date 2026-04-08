@@ -4,8 +4,8 @@ Both ``apt_scrape.cli`` and ``apt_scrape.server`` need to optionally fetch
 each listing's detail page and merge the richer data into the summary dict.
 This module provides the shared implementation so both callers stay thin.
 
-All functions accept a *browser* parameter so they remain independent of the
-``BrowserManager`` singleton defined in ``apt_scrape.server``.
+All functions accept a *browser* parameter (a ``Fetcher`` instance) so they
+remain independent of the module-level singleton defined in ``apt_scrape.server``.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from apt_scrape.server import BrowserManager
+    from apt_scrape.browser import Fetcher
 
 from apt_scrape.sites import adapter_for_url
 
@@ -26,14 +26,10 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-# Seconds between successive slot launches within one parallel batch.
-# slot 0 starts immediately, slot 1 after 0.4 s, slot 2 after 0.8 s, etc.
-_STAGGER_SECONDS = 0.4
-
 
 async def enrich_with_details(
     listings: list[dict[str, Any]],
-    browser: BrowserManager,
+    browser: Fetcher,
     fallback_adapter: Any,
     detail_limit: int | None = None,
     *,
@@ -42,11 +38,9 @@ async def enrich_with_details(
 ) -> tuple[int, list[dict[str, str]]]:
     """Fetch detail pages and merge data into listing dicts in-place.
 
-    Listings are fetched in parallel batches of *concurrency*.  VPN is rotated
-    before every *rotate_every_batches*-th batch (starting from batch 2) so
-    that long runs spread traffic across servers.  Within each batch, slot
-    launches are staggered by ``_STAGGER_SECONDS * slot_index`` to avoid a
-    burst of simultaneous page loads.
+    Listings are fetched in parallel batches of *concurrency*.  Proxy is
+    rotated before every *rotate_every_batches*-th batch (starting from
+    batch 2) so that long runs spread traffic across servers.
 
     For each listing, the function fetches the detail page, calls the
     appropriate adapter's ``parse_detail``, and adds several convenience keys
@@ -59,12 +53,12 @@ async def enrich_with_details(
 
     Args:
         listings: Listing dicts to enrich (modified in-place).
-        browser: ``BrowserManager`` instance used to fetch pages.
+        browser: ``Fetcher`` instance used to fetch pages.
         fallback_adapter: ``SiteAdapter`` used when the listing URL cannot be
             matched to any registered adapter.
         detail_limit: Maximum number of listings to enrich. ``None`` means all.
         concurrency: Number of parallel fetches per batch (default 5).
-        rotate_every_batches: Rotate VPN every N batches (default 3).
+        rotate_every_batches: Rotate proxy every N batches (default 3).
 
     Returns:
         Tuple of ``(enriched_count, error_list)`` where each error entry is a
@@ -80,12 +74,14 @@ async def enrich_with_details(
     ]
 
     for batch_idx, batch in enumerate(batches):
-        # Rotate VPN before every rotate_every_batches-th batch (skip batch 0).
+        # Rotate proxy before every rotate_every_batches-th batch (skip batch 0).
         if batch_idx > 0 and batch_idx % rotate_every_batches == 0:
             logger.info(
                 "Rotating proxy before detail batch %d/%d.", batch_idx + 1, len(batches)
             )
-            await browser.rotate_proxy()
+            browser._proxy.rotate()
+            # Force browser restart with new proxy
+            await browser.close()
 
         logger.info(
             "Detail batch %d/%d: fetching %d listing(s) in parallel.",
@@ -103,11 +99,9 @@ async def enrich_with_details(
                 return None
             listing_adapter = adapter_for_url(listing_url) or fallback_adapter
             try:
-                detail_html = await browser.fetch_page_parallel(
+                detail_html = await browser.fetch_with_retry(
                     listing_url,
                     wait_selector=listing_adapter.config.detail_wait_selector,
-                    stagger_secs=slot * _STAGGER_SECONDS,
-                    wait_until=getattr(listing_adapter.config, "page_load_wait", "domcontentloaded"),
                 )
                 detail = listing_adapter.parse_detail(detail_html, listing_url).to_dict()
                 listing["detail"] = detail
@@ -139,7 +133,7 @@ async def enrich_with_details(
 
 async def enrich_post_dates(
     listings: list[dict[str, Any]],
-    browser: BrowserManager,
+    browser: Fetcher,
     fallback_adapter: Any,
     *,
     concurrency: int = 5,
@@ -148,16 +142,16 @@ async def enrich_post_dates(
     """Fetch detail pages to fill in missing ``post_date`` fields in-place.
 
     Skips listings that already have a non-empty ``post_date``.  Fetches are
-    done in parallel batches of *concurrency* with staggered slot launches and
-    optional VPN rotation between batches.
+    done in parallel batches of *concurrency* with optional proxy rotation
+    between batches.
 
     Args:
         listings: Listing dicts to enrich (modified in-place).
-        browser: ``BrowserManager`` instance used to fetch pages.
+        browser: ``Fetcher`` instance used to fetch pages.
         fallback_adapter: ``SiteAdapter`` used when the listing URL cannot be
             matched to any registered adapter.
         concurrency: Number of parallel fetches per batch (default 5).
-        rotate_every_batches: Rotate VPN every N batches (default 3).
+        rotate_every_batches: Rotate proxy every N batches (default 3).
 
     Returns:
         Tuple of ``(enriched_count, error_list)`` where each error entry is a
@@ -182,7 +176,8 @@ async def enrich_post_dates(
             logger.info(
                 "Rotating proxy before post-date batch %d/%d.", batch_idx + 1, len(batches)
             )
-            await browser.rotate_proxy()
+            browser._proxy.rotate()
+            await browser.close()
 
         logger.info(
             "Post-date batch %d/%d: fetching %d listing(s) in parallel.",
@@ -197,11 +192,9 @@ async def enrich_post_dates(
             listing_url = str(listing.get("url", "")).strip()
             listing_adapter = adapter_for_url(listing_url) or fallback_adapter
             try:
-                detail_html = await browser.fetch_page_parallel(
+                detail_html = await browser.fetch_with_retry(
                     listing_url,
                     wait_selector=listing_adapter.config.detail_wait_selector,
-                    stagger_secs=slot * _STAGGER_SECONDS,
-                    wait_until=getattr(listing_adapter.config, "page_load_wait", "domcontentloaded"),
                 )
                 post_date = listing_adapter.extract_post_date_from_detail_html(detail_html)
                 listing["post_date"] = post_date

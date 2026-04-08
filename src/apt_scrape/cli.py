@@ -18,7 +18,7 @@ import click
 
 from apt_scrape.enrichment import enrich_post_dates, enrich_with_details
 from apt_scrape.export import listings_to_csv, listings_to_markdown_table
-from apt_scrape.server import browser
+from apt_scrape.server import fetcher
 from apt_scrape.sites import (
     SearchFilters,
     adapter_for_url,
@@ -315,8 +315,10 @@ async def _run_search(
                 search_urls.append(url)
                 click.echo(f"Fetching {pt} page {page_num}: {url}", err=True)
 
-                html = await browser.fetch_page(
-                    url, wait_selector=adapter.config.search_wait_selector
+                html = await fetcher.fetch_with_retry(
+                    url,
+                    wait_selector=adapter.config.search_wait_selector,
+                    wait_timeout=adapter.config.search_wait_timeout / 1000,
                 )
                 page_listings = adapter.parse_search(html)
 
@@ -366,13 +368,13 @@ async def _run_search(
 
         if include_details and deduped:
             detail_enriched, detail_errors = await enrich_with_details(
-                deduped, browser, adapter, detail_limit,
+                deduped, fetcher, adapter, detail_limit,
                 concurrency=eff_concurrency,
                 rotate_every_batches=eff_rotate,
             )
 
         post_date_enriched, post_date_errors = await enrich_post_dates(
-            deduped, browser, adapter,
+            deduped, fetcher, adapter,
             concurrency=eff_concurrency,
             rotate_every_batches=eff_rotate,
         )
@@ -421,7 +423,7 @@ async def _run_search(
             ensure_ascii=False,
         )
     finally:
-        await browser.close()
+        await fetcher.close()
 
 
 # ---------------------------------------------------------------------------
@@ -507,12 +509,12 @@ async def _run_detail(url: str) -> str:
             )
 
         click.echo(f"Fetching: {url}", err=True)
-        html = await browser.fetch_page(url, wait_selector=adapter.config.detail_wait_selector)
+        html = await fetcher.fetch_with_retry(url, wait_selector=adapter.config.detail_wait_selector)
         return json.dumps(
             adapter.parse_detail(html, url).to_dict(), indent=2, ensure_ascii=False
         )
     finally:
-        await browser.close()
+        await fetcher.close()
 
 
 # ---------------------------------------------------------------------------
@@ -538,9 +540,9 @@ async def _run_dump(url: str, wait_selector: str | None) -> str:
     """Async implementation of the dump command."""
     try:
         click.echo(f"Fetching: {url}", err=True)
-        return await browser.fetch_page(url, wait_selector=wait_selector)
+        return await fetcher.fetch_with_retry(url, wait_selector=wait_selector)
     finally:
-        await browser.close()
+        await fetcher.close()
 
 
 # ---------------------------------------------------------------------------

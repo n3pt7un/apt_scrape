@@ -26,7 +26,7 @@ from urllib.parse import parse_qs, urlparse
 # the test file is invoked directly (e.g. ``python tests/test_immobiliare.py``).
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from apt_scrape.server import browser
+from apt_scrape.server import fetcher
 from apt_scrape.sites import SearchFilters, get_adapter
 
 
@@ -385,8 +385,10 @@ async def run_live_tests(adapter) -> tuple[int, int]:
         print(f"       {INFO} URL: {url}")
 
         try:
-            html = await browser.fetch_page(
-                url, wait_selector=adapter.config.search_wait_selector
+            html = await fetcher.fetch_with_retry(
+                url,
+                wait_selector=adapter.config.search_wait_selector,
+                wait_timeout=adapter.config.search_wait_timeout / 1000,
             )
             listings = adapter.parse_search(html)
             count = len(listings)
