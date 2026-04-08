@@ -8,17 +8,16 @@ dependencies = [
     "mcp>=1.0.0",
     "pydantic>=2.0.0",
     "beautifulsoup4>=4.12.0",
-    "camoufox[geoip]>=0.4.0",
+    "nodriver>=0.38",
     "lxml>=5.0.0",
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
-    "pproxy>=2.7.8",
+    "tenacity>=9.0.0",
     "click>=8.1.0",
     "langgraph>=0.2",
     "langchain-openai>=0.2",
     "langchain-core>=0.3",
     "notion-client==2.2.1",
-    "tenacity>=9.0.0",
 ]
 
 [project.optional-dependencies]
@@ -30,9 +29,8 @@ backend = [
     "aiofiles==24.1.0",
     "httpx==0.28.1",
 ]
-frontend = [
-    "streamlit==1.42.0",
-    "httpx==0.28.1",
+tui = [
+    "textual>=1.0.0",
 ]
 
 [project.scripts]
@@ -50,4 +48,4 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/apt_scrape", "src/backend", "src/frontend"]
+packages = ["src/apt_scrape", "src/backend"]
