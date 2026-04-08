@@ -565,10 +565,31 @@ def sites() -> None:
 
 _DEFAULT_DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 
-try:
-    from camoufox.async_api import AsyncCamoufox
-except ImportError:  # pragma: no cover
-    AsyncCamoufox = None  # type: ignore[assignment,misc]
+def _find_chrome() -> str:
+    """Return the path to the system Chrome binary."""
+    import platform
+    import shutil
+
+    system = platform.system()
+    if system == "Darwin":
+        candidates = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ]
+    elif system == "Linux":
+        candidates = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]
+    else:  # Windows
+        candidates = [
+            os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+        ]
+
+    for c in candidates:
+        resolved = shutil.which(c) if not os.path.isabs(c) else (c if os.path.isfile(c) else None)
+        if resolved:
+            return resolved
+    raise FileNotFoundError("Could not find Chrome. Install Google Chrome and try again.")
 
 
 @cli.command("login")
@@ -584,10 +605,11 @@ except ImportError:  # pragma: no cover
     help="Label to distinguish cookie files when using multiple accounts.",
 )
 def login(site: str, identifier: str) -> None:
-    """Open a headed browser to log into a site and save session cookies.
+    """Open Chrome to log into a site and save session cookies.
 
-    After the browser opens, log in manually, then return to the terminal
-    and press Enter to capture cookies.
+    Launches your real Chrome installation with a temporary profile.
+    Log in normally (Google OAuth works), then press Enter in the
+    terminal to capture cookies.
     """
     available_sites = list_adapters()
     if site not in available_sites:
@@ -599,7 +621,17 @@ def login(site: str, identifier: str) -> None:
 
 
 async def _run_login(site_id: str, identifier: str) -> None:
-    """Async implementation of the login command."""
+    """Launch real Chrome with a temp profile, let user log in, read cookies from disk.
+
+    No automation flags, no debug ports — Chrome runs completely clean.
+    After the user closes Chrome, cookies are read from Chrome's SQLite
+    cookie database in the temp profile directory.
+    """
+    import shutil
+    import sqlite3
+    import subprocess
+    import tempfile
+
     from apt_scrape.cookies import cookie_path, save_cookies
 
     adapter = get_adapter(site_id)
@@ -608,33 +640,113 @@ async def _run_login(site_id: str, identifier: str) -> None:
         click.echo(f"Error: site '{site_id}' has no login_url configured.", err=True)
         raise SystemExit(1)
 
-    click.echo(f"Opening headed browser for {adapter.config.display_name}...", err=True)
+    chrome_path = _find_chrome()
+    tmp_profile = tempfile.mkdtemp(prefix="apt_scrape_login_")
+
+    click.echo(f"Opening Chrome for {adapter.config.display_name}...", err=True)
     click.echo(f"Login URL: {login_url}", err=True)
 
-    async with AsyncCamoufox(headless=False) as browser_instance:
-        context = await browser_instance.new_context()
-        page = await context.new_page()
-        await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+    # Write preferences to allow popups and third-party cookies
+    # so Google OAuth flows work in the fresh profile.
+    default_dir = os.path.join(tmp_profile, "Default")
+    os.makedirs(default_dir, exist_ok=True)
+    import json as _json
+    prefs = {
+        "profile": {
+            "default_content_setting_values": {
+                "popups": 1,          # 1 = allow
+                "cookies": 1,         # 1 = allow all
+            },
+            "cookie_controls_mode": 0,  # 0 = allow all cookies
+        },
+    }
+    with open(os.path.join(default_dir, "Preferences"), "w") as f:
+        _json.dump(prefs, f)
 
-        click.echo(
-            "\nLog in to the site in the browser window.\n"
-            "When you're done, come back here and press Enter to save cookies.",
-            err=True,
-        )
-        click.pause("")
+    proc = subprocess.Popen(
+        [
+            chrome_path,
+            f"--user-data-dir={tmp_profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-popup-blocking",
+            login_url,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
-        cookies = await context.cookies()
-        if not cookies:
-            click.echo("Warning: no cookies captured. Login may have failed.", err=True)
+    click.echo(
+        "\nLog in to the site in the Chrome window.\n"
+        "When you're done, CLOSE CHROME completely, then press Enter here.",
+        err=True,
+    )
+    click.pause("")
+
+    # Wait for Chrome to exit (user should have closed it)
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        click.echo("Chrome still running — terminating...", err=True)
+        proc.terminate()
+        proc.wait(timeout=5)
+
+    # Read cookies from Chrome's SQLite database
+    cookie_db = os.path.join(tmp_profile, "Default", "Cookies")
+    if not os.path.exists(cookie_db):
+        # Some Chrome versions use "Network" subfolder
+        cookie_db = os.path.join(tmp_profile, "Default", "Network", "Cookies")
+
+    if not os.path.exists(cookie_db):
+        click.echo("Error: Chrome cookie database not found in temp profile.", err=True)
+        shutil.rmtree(tmp_profile, ignore_errors=True)
+        raise SystemExit(1)
+
+    conn = sqlite3.connect(cookie_db)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT name, value, host_key, path, expires_utc, "
+            "is_httponly, is_secure, samesite FROM cookies"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        click.echo("Warning: no cookies found. Login may have failed.", err=True)
+        shutil.rmtree(tmp_profile, ignore_errors=True)
+        return
+
+    # Chrome stores expires_utc as microseconds since 1601-01-01.
+    # Convert to Unix epoch seconds. 0 means session cookie → use -1.
+    _CHROME_EPOCH_OFFSET = 11644473600
+    samesite_map = {0: "None", 1: "Lax", 2: "Strict"}
+
+    pw_cookies = []
+    for row in rows:
+        expires_utc = row["expires_utc"]
+        if expires_utc and expires_utc > 0:
+            expires_unix = (expires_utc / 1_000_000) - _CHROME_EPOCH_OFFSET
         else:
-            path = cookie_path(site_id, identifier, data_dir=_DEFAULT_DATA_DIR)
-            save_cookies(cookies, path)
-            click.echo(f"Saved {len(cookies)} cookies to {path}", err=True)
+            expires_unix = -1
 
-        await page.close()
-        await context.close()
+        pw_cookies.append({
+            "name": row["name"],
+            "value": row["value"],
+            "domain": row["host_key"],
+            "path": row["path"],
+            "expires": expires_unix,
+            "httpOnly": bool(row["is_httponly"]),
+            "secure": bool(row["is_secure"]),
+            "sameSite": samesite_map.get(row["samesite"], "None"),
+        })
 
-    click.echo("Done. Browser closed.", err=True)
+    path = cookie_path(site_id, identifier, data_dir=_DEFAULT_DATA_DIR)
+    save_cookies(pw_cookies, path)
+    click.echo(f"Saved {len(pw_cookies)} cookies to {path}", err=True)
+
+    shutil.rmtree(tmp_profile, ignore_errors=True)
+    click.echo("Done. Temp profile cleaned up.", err=True)
 
 
 # ---------------------------------------------------------------------------
