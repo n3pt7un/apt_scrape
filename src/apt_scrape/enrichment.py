@@ -102,6 +102,7 @@ async def enrich_with_details(
                 detail_html = await browser.fetch_with_retry(
                     listing_url,
                     wait_selector=listing_adapter.config.detail_wait_selector,
+                    rejection_checker=listing_adapter.detect_rejection,
                 )
                 detail = listing_adapter.parse_detail(detail_html, listing_url).to_dict()
                 listing["detail"] = detail
@@ -195,6 +196,7 @@ async def enrich_post_dates(
                 detail_html = await browser.fetch_with_retry(
                     listing_url,
                     wait_selector=listing_adapter.config.detail_wait_selector,
+                    rejection_checker=listing_adapter.detect_rejection,
                 )
                 post_date = listing_adapter.extract_post_date_from_detail_html(detail_html)
                 listing["post_date"] = post_date

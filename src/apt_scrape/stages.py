@@ -70,6 +70,7 @@ class EnrichStage(Stage):
                 url,
                 wait_selector=adapter.config.detail_wait_selector,
                 wait_timeout=adapter.config.search_wait_timeout / 1000,
+                rejection_checker=adapter.detect_rejection,
             )
             detail = adapter.parse_detail(html, url).to_dict()
             item["detail"] = detail

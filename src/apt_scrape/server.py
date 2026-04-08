@@ -332,7 +332,8 @@ async def search_listings(params: SearchListingsInput) -> str:
 
         try:
             html = await fetcher.fetch_with_retry(
-                url, wait_selector=adapter.config.search_wait_selector
+                url, wait_selector=adapter.config.search_wait_selector,
+                rejection_checker=adapter.detect_rejection,
             )
         except Exception as exc:
             return _json({"error": f"Failed to fetch page {page_num}: {exc}", "url": url})
@@ -439,7 +440,8 @@ async def get_listing_detail(params: GetListingDetailInput) -> str:
 
     try:
         html = await fetcher.fetch_with_retry(
-            url, wait_selector=adapter.config.detail_wait_selector
+            url, wait_selector=adapter.config.detail_wait_selector,
+            rejection_checker=adapter.detect_rejection,
         )
     except Exception as exc:
         return _json({"error": f"Failed to fetch listing: {exc}", "url": url})

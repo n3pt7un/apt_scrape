@@ -35,6 +35,10 @@ class BlockDetectedError(Exception):
     """Raised when bot detection (CAPTCHA, DataDome) is encountered."""
 
 
+class SiteRejectionError(Exception):
+    """Raised when a site returns a valid HTTP 200 but content indicates rejection."""
+
+
 def classify_error(exc: BaseException) -> ErrorClass:
     """Classify an exception to determine retry strategy."""
     if isinstance(exc, HttpError):
@@ -45,7 +49,7 @@ def classify_error(exc: BaseException) -> ErrorClass:
         if exc.status in (403, 406):
             return ErrorClass.BLOCKED
         return ErrorClass.TRANSIENT
-    if isinstance(exc, BlockDetectedError):
+    if isinstance(exc, (BlockDetectedError, SiteRejectionError)):
         return ErrorClass.BLOCKED
     if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
         return ErrorClass.TRANSIENT

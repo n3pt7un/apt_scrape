@@ -136,7 +136,13 @@ async def run_config_job(
                     _log(f"Fetching {pt}{a_name} page {page_num}: {url}")
                     page_load_wait = getattr(adapter.config, "page_load_wait", "domcontentloaded")
                     search_wait_timeout = getattr(adapter.config, "search_wait_timeout", 15000)
-                    html = await fetcher.fetch(url, wait_selector=adapter.config.search_wait_selector, wait_timeout=search_wait_timeout / 1000, page_load_wait=page_load_wait)
+                    html = await fetcher.fetch_with_retry(
+                        url,
+                        wait_selector=adapter.config.search_wait_selector,
+                        wait_timeout=search_wait_timeout / 1000,
+                        rejection_checker=adapter.detect_rejection,
+                        page_load_wait=page_load_wait,
+                    )
                     if request_delay > 0:
                         await asyncio.sleep(request_delay)
                     page_listings = adapter.parse_search(html)

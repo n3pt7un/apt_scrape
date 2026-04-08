@@ -319,6 +319,7 @@ async def _run_search(
                     url,
                     wait_selector=adapter.config.search_wait_selector,
                     wait_timeout=adapter.config.search_wait_timeout / 1000,
+                    rejection_checker=adapter.detect_rejection,
                 )
                 page_listings = adapter.parse_search(html)
 
@@ -509,7 +510,10 @@ async def _run_detail(url: str) -> str:
             )
 
         click.echo(f"Fetching: {url}", err=True)
-        html = await fetcher.fetch_with_retry(url, wait_selector=adapter.config.detail_wait_selector)
+        html = await fetcher.fetch_with_retry(
+            url, wait_selector=adapter.config.detail_wait_selector,
+            rejection_checker=adapter.detect_rejection,
+        )
         return json.dumps(
             adapter.parse_detail(html, url).to_dict(), indent=2, ensure_ascii=False
         )

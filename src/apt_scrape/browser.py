@@ -268,18 +268,43 @@ class Fetcher:
         wait_selector: str | None = None,
         wait_timeout: float = 15.0,
         max_attempts: int = 3,
+        rejection_checker: Any | None = None,
+        page_load_wait: str = "networkidle",
     ) -> str:
         """Fetch with proxy rotation on block detection.
 
         On each block/error: rotate proxy, restart browser, retry.
+
+        Args:
+            rejection_checker: Optional callable(html) -> str|None. If it
+                returns a non-None string, the page is treated as a site
+                rejection and retried. Typically ``adapter.detect_rejection``.
+            page_load_wait: Playwright wait_until event for page.goto.
         """
-        from apt_scrape.retry import BlockDetectedError, classify_error, ErrorClass
+        from apt_scrape.retry import (
+            BlockDetectedError, SiteRejectionError,
+            classify_error, ErrorClass,
+        )
 
         last_exc = None
         for attempt in range(1, max_attempts + 1):
             try:
-                return await self.fetch(url, wait_selector, wait_timeout)
-            except (BlockDetectedError, TimeoutError, ConnectionError, OSError) as exc:
+                html = await self.fetch(
+                    url, wait_selector, wait_timeout,
+                    page_load_wait=page_load_wait,
+                )
+                # Check for site-level rejection (valid HTTP 200 but error content)
+                if rejection_checker is not None:
+                    reason = rejection_checker(html)
+                    if reason:
+                        raise SiteRejectionError(
+                            f"Site rejected request for {url}: {reason}"
+                        )
+                return html
+            except (
+                BlockDetectedError, SiteRejectionError,
+                TimeoutError, ConnectionError, OSError,
+            ) as exc:
                 last_exc = exc
                 error_class = classify_error(exc)
                 logger.warning(
