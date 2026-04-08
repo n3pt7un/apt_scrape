@@ -92,6 +92,23 @@ class AnalyseStage(Stage):
         super().__init__("analyse")
         self._preferences = preferences
         self._semaphore = asyncio.Semaphore(concurrency)
+        self._tokens_used = 0
+        self._items_analysed = 0
+
+    @property
+    def tokens_used(self) -> int:
+        return self._tokens_used
+
+    @property
+    def items_analysed(self) -> int:
+        return self._items_analysed
+
+    def estimated_cost_usd(self, model: str | None = None) -> float:
+        """Estimate cost based on token count and model."""
+        import os
+        from apt_scrape.analysis import _model_cost_per_1m_tokens
+        m = model or os.environ.get("OPENROUTER_MODEL", "google/gemini-3.1-flash-lite-preview")
+        return round((self._tokens_used / 1_000_000) * _model_cost_per_1m_tokens(m), 6)
 
     async def process(self, item: dict[str, Any]) -> dict[str, Any]:
         from apt_scrape.analysis import _get_graph, NotionApartmentFields, score_to_stars
@@ -108,6 +125,8 @@ class AnalyseStage(Stage):
                 item["ai_stars"] = score_to_stars(result.ai_score)
                 item["ai_verdict"] = result.ai_verdict
                 item["ai_reason"] = result.ai_reason
+                self._tokens_used += 1000  # ~800 input + ~200 output estimate
+                self._items_analysed += 1
             except Exception as exc:
                 logger.warning("Analysis failed for %s: %s", item.get("url", "?"), exc)
                 item["ai_score"] = 0

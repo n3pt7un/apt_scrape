@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-from apt_scrape.stages import DedupStage
+from apt_scrape.stages import DedupStage, AnalyseStage
 
 
 @pytest.mark.asyncio
@@ -38,3 +38,10 @@ async def test_dedup_stats():
     await stage.process({"url": "https://a.com/2"})
     assert stage.unique_count == 2
     assert stage.dupe_count == 1
+
+
+@pytest.mark.asyncio
+async def test_analyse_stage_tracks_tokens():
+    stage = AnalyseStage(preferences="test prefs")
+    assert stage.tokens_used == 0
+    assert stage.items_analysed == 0

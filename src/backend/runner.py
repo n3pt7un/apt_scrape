@@ -190,6 +190,16 @@ async def run_config_job(
         stats = pipeline.stats()
         _log(f"Pipeline stats: {stats}")
 
+        # Collect token usage from AnalyseStage if present
+        ai_usage: dict | None = None
+        for stage in pipeline._stages:
+            if hasattr(stage, 'tokens_used'):
+                ai_usage = {
+                    'tokens_used': stage.tokens_used,
+                    'cost_usd': stage.estimated_cost_usd(),
+                }
+                break
+
         # Stamp area/city on all listings
         for listing in all_listings:
             listing["_area"] = listing.pop("_search_area", "")
@@ -254,8 +264,8 @@ async def run_config_job(
             job.listing_count = len(deduped)
             job.scraped_count = scraped_count
             job.dupes_removed = dupes_removed
-            job.ai_tokens_used = None
-            job.ai_cost_usd = None
+            job.ai_tokens_used = ai_usage['tokens_used'] if ai_usage else None
+            job.ai_cost_usd = ai_usage['cost_usd'] if ai_usage else None
             job.area_stats = json.dumps(area_stats)
             session.add(job)
             session.commit()
