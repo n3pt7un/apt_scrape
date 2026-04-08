@@ -21,8 +21,8 @@ async def lifespan(app: FastAPI):
     await stop_scheduler()
     # Close browser singleton on shutdown
     try:
-        from apt_scrape.server import browser
-        await browser.close()
+        from apt_scrape.server import fetcher
+        await fetcher.close()
     except Exception:
         pass
 

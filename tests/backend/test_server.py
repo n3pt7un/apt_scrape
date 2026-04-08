@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from apt_scrape.browser import Fetcher, detect_block
 
 
@@ -13,18 +13,21 @@ async def test_fetcher_init_lazy():
 
 @pytest.mark.asyncio
 async def test_close_resets_state():
-    """Fetcher.close() sets _browser and _tab to None."""
+    """Fetcher.close() sets _browser to None and closes context."""
     fetcher = Fetcher()
     mock_browser = MagicMock()
-    mock_browser.stop = MagicMock()
+    mock_ctx = MagicMock()
+    mock_ctx.close = AsyncMock()
+    mock_camoufox = MagicMock()
+    mock_camoufox.__aexit__ = AsyncMock()
     fetcher._browser = mock_browser
-    fetcher._tab = MagicMock()
+    fetcher._context = mock_ctx
+    fetcher._camoufox_ctx = mock_camoufox
 
     await fetcher.close()
 
     assert fetcher._browser is None
-    assert fetcher._tab is None
-    mock_browser.stop.assert_called_once()
+    assert fetcher._context is None
 
 
 @pytest.mark.asyncio
@@ -32,29 +35,35 @@ async def test_close_is_idempotent():
     """Calling close() twice must not raise."""
     fetcher = Fetcher()
     mock_browser = MagicMock()
-    mock_browser.stop = MagicMock()
+    mock_camoufox = MagicMock()
+    mock_camoufox.__aexit__ = AsyncMock()
     fetcher._browser = mock_browser
+    fetcher._camoufox_ctx = mock_camoufox
 
     await fetcher.close()
-    await fetcher.close()  # second call — _browser is already None, should be a no-op
+    await fetcher.close()  # second call — already None, should be a no-op
 
     assert fetcher._browser is None
 
 
 @pytest.mark.asyncio
 async def test_close_resilient_to_errors():
-    """close() sets _browser to None even if browser.stop() raises."""
+    """close() sets _browser to None even if __aexit__ raises."""
     fetcher = Fetcher()
     mock_browser = MagicMock()
-    mock_browser.stop.side_effect = RuntimeError("simulated crash")
+    mock_camoufox = MagicMock()
+
+    async def fail_exit(*a):
+        raise RuntimeError("simulated crash")
+
+    mock_camoufox.__aexit__ = fail_exit
     fetcher._browser = mock_browser
-    fetcher._tab = MagicMock()
+    fetcher._camoufox_ctx = mock_camoufox
 
     # Must not propagate the error
     await fetcher.close()
 
     assert fetcher._browser is None
-    assert fetcher._tab is None
 
 
 @pytest.mark.parametrize("html, expected", [

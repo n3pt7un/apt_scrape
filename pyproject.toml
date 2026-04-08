@@ -33,6 +33,10 @@ backend = [
 tui = [
     "textual>=1.0.0",
 ]
+frontend = [
+    "streamlit>=1.45.0",
+    "plotly>=6.0.0",
+]
 
 [project.scripts]
 apt     = "apt_scrape.devctl:cli"
@@ -49,4 +53,4 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/apt_scrape", "src/backend"]
+packages = ["src/apt_scrape", "src/backend", "src/frontend"]
