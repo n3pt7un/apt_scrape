@@ -1,7 +1,6 @@
 """apt_scrape.browser — nodriver-based stealth browser for scraping.
 
-Replaces the Camoufox BrowserManager with nodriver (Chrome, no WebDriver
-flags, no automation indicators). Includes:
+Uses nodriver (Chrome, no WebDriver flags, no automation indicators). Includes:
 - Lazy browser startup
 - Context recycling every N pages
 - Full browser restart every M requests

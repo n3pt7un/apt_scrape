@@ -104,3 +104,6 @@ detail_selectors:
     - "[class*='chars_item'] [class*='chars__cnt']"
 
 login_url: "https://www.casa.it/login/"
+
+min_request_delay: 3.0
+max_request_delay: 6.0

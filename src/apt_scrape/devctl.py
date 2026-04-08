@@ -2,7 +2,7 @@
 """apt_scrape.devctl — local dev CLI for apt_scrape.
 
 Commands:
-  start     Start backend and/or frontend
+  start     Start backend
   stop      Stop running processes
   status    Show what's running
   logs      Tail logs
@@ -41,19 +41,6 @@ SERVICES = {
         },
         "cwd": str(REPO_ROOT),
         "url": "http://localhost:8000/health",
-    },
-    "frontend": {
-        "cmd": lambda: [
-            _find_bin("streamlit"), "run",
-            str(REPO_ROOT / "src" / "frontend" / "app.py"),
-            "--server.port", "8501",
-            "--server.address", "0.0.0.0",
-        ],
-        "env": {
-            "BACKEND_URL": "http://localhost:8000",
-        },
-        "cwd": str(REPO_ROOT / "src" / "frontend"),
-        "url": "http://localhost:8501",
     },
 }
 
@@ -136,10 +123,10 @@ def cli():
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
+@click.argument("service", default="all", type=click.Choice(["all", "backend"]))
 @click.option("--wait", default=3, show_default=True, help="Seconds to wait before printing URLs.")
 def start(service: str, wait: int):
-    """Start backend, frontend, or both."""
+    """Start backend or all services."""
     names = list(SERVICES) if service == "all" else [service]
     click.echo(f"Starting {', '.join(names)}...")
     for name in names:
@@ -156,9 +143,9 @@ def start(service: str, wait: int):
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
+@click.argument("service", default="all", type=click.Choice(["all", "backend"]))
 def stop(service: str):
-    """Stop backend, frontend, or both."""
+    """Stop backend or all services."""
     names = list(SERVICES) if service == "all" else [service]
     click.echo(f"Stopping {', '.join(names)}...")
     for name in names:
@@ -166,9 +153,9 @@ def stop(service: str):
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
+@click.argument("service", default="all", type=click.Choice(["all", "backend"]))
 def restart(service: str):
-    """Restart backend, frontend, or both."""
+    """Restart backend or all services."""
     names = list(SERVICES) if service == "all" else [service]
     click.echo(f"Restarting {', '.join(names)}...")
     for name in names:
@@ -192,7 +179,7 @@ def status():
 
 
 @cli.command()
-@click.argument("service", type=click.Choice(["backend", "frontend"]))
+@click.argument("service", type=click.Choice(["backend"]))
 @click.option("-n", "--lines", default=50, show_default=True, help="Number of lines to show.")
 @click.option("-f", "--follow", "--stream", is_flag=True, help="Stream log output continuously (like tail -f).")
 def logs(service: str, lines: int, follow: bool):
