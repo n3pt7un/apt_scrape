@@ -166,11 +166,14 @@ class IdealistaAdapter(SiteAdapter):
     def _parse_one_card(self, card: Tag, sels: SearchSelectors) -> ListingSummary:
         """Parse a single Idealista search result card.
 
-        Idealista renders all feature spans inside a single container div;
-        individual ``span.item-detail`` elements give clean values, but a
-        sibling span concatenates them all into one string.  This override
-        deduplicates by keeping only single-feature strings (no embedded
-        spaces from concatenation) and splits on the known m2 pattern.
+        Address is extracted from the ``title`` attribute of ``a.item-link``
+        (e.g. "Bilocale in Via Privata Paolo Rotta, 13, Niguarda, Milano")
+        rather than from a separate element, which does not exist.
+
+        Feature spans (``span.item-detail``) are now clean individual elements;
+        there is no longer a concatenated summary span, so no deduplication
+        is needed.  A fallback splitter handles any legacy concatenated strings
+        that may reappear after site updates.
         """
         title_el = sels.title.find(card)
         title = extract_text(title_el)
@@ -184,23 +187,28 @@ class IdealistaAdapter(SiteAdapter):
 
         price = extract_text(sels.price.find(card))
 
-        # Collect individual feature spans, skip the concatenated summary span
+        # Collect feature spans. Idealista now emits clean individual
+        # span.item-detail elements with no concatenated summary span.
+        # We still guard against a future concatenation regression by
+        # removing any string that is a strict superset of all others.
         raw_spans = sels.features.find_all(card)
-        feature_texts: list[str] = []
-        longest = ""
-        for span in raw_spans:
-            t = extract_text(span)
-            if t:
-                feature_texts.append(t)
-                if len(t) > len(longest):
-                    longest = t
-        # Remove the concatenated string (it's a superset of all others)
-        feature_texts = [t for t in feature_texts if t != longest or feature_texts.count(t) > 1]
-        # Also split any remaining "Nlocali67 m2Floor" style strings by known keywords
+        feature_texts: list[str] = [extract_text(s) for s in raw_spans if extract_text(s)]
+
+        if len(feature_texts) > 1:
+            longest = max(feature_texts, key=len)
+            # Only remove it if every other string is a substring of it
+            # (i.e. it really is a concatenation, not just the longest feature).
+            others = [t for t in feature_texts if t is not longest]
+            if others and all(t in longest for t in others):
+                feature_texts = others
+
+        # Fallback: split any residual "Nlocali67 m2Floor" style strings
         split: list[str] = []
         for t in feature_texts:
-            # Split on boundaries between known feature types
-            parts = re.split(r'(?<=\w)(?=\d+(?:º|°)?\s*(?:piano|locale|locali)|\bpiano\b|\bbagn)', t, flags=re.IGNORECASE)
+            parts = re.split(
+                r'(?<=\w)(?=\d+(?:º|°)?\s*(?:piano|locale|locali)|\bpiano\b|\bbagn)',
+                t, flags=re.IGNORECASE,
+            )
             split.extend(p.strip() for p in parts if p.strip())
         feature_texts = split
 
@@ -216,7 +224,13 @@ class IdealistaAdapter(SiteAdapter):
                 elif name == "bathrooms" and not bathrooms:
                     bathrooms = val
 
-        address = extract_text(sels.address.find(card))
+        # Address: Idealista encodes the full address in the `title` attribute
+        # of a.item-link (e.g. "Bilocale in Via Privata Paolo Rotta, 13, Niguarda, Milano").
+        # There is no separate address element in the search card.
+        address = extract_attr(title_el, "title")
+        if not address:
+            address = title  # fallback: use visible link text
+
         img_el = sels.thumbnail.find(card)
         thumbnail = (
             extract_attr(img_el, "data-ondemand-img")

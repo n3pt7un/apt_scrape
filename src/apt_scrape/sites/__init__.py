@@ -40,6 +40,7 @@ from .base import (
 from .casa import CasaAdapter
 from .idealista import IdealistaAdapter
 from .immobiliare import ImmobiliareAdapter
+from .tecnocasa import TecnocasaAdapter
 
 __all__ = [
     "ADAPTERS",
@@ -74,6 +75,7 @@ ADAPTERS: list[SiteAdapter] = [
     ImmobiliareAdapter(),
     CasaAdapter(),
     IdealistaAdapter(),
+    TecnocasaAdapter(),
 ]
 
 _BY_ID: dict[str, SiteAdapter] = {a.site_id: a for a in ADAPTERS}
@@ -84,6 +86,7 @@ _CONFIG_PATHS: dict[str, tuple[type[SiteAdapter], str]] = {
     "immobiliare": (ImmobiliareAdapter, str(_PACKAGE_DIR / "configs" / "immobiliare.yaml")),
     "casa": (CasaAdapter, str(_PACKAGE_DIR / "configs" / "casa.yaml")),
     "idealista": (IdealistaAdapter, str(_PACKAGE_DIR / "configs" / "idealista.yaml")),
+    "tecnocasa": (TecnocasaAdapter, str(_PACKAGE_DIR / "configs" / "tecnocasa.yaml")),
 }
 
 

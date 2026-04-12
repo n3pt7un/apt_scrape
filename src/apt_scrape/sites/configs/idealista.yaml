@@ -84,16 +84,20 @@ search_selectors:
     - "span.item-detail"
     - "[class*='item-detail']"
   address:
-    - "span.item-link"
-    - "[class*='item-link']"
+    # Address is the `title` attribute of a.item-link (full address string).
+    # There is no separate address element; we extract title attr in the adapter.
+    # These selectors are fallbacks kept for compatibility but not actively used.
+    - "a.item-link"
+    - "a[href*='/immobile/']"
   thumbnail:
-    # Images now load directly into src (no longer data-ondemand-img / data-src)
+    # Images load directly into src (no lazy loading / data-src)
     - "img[src*='img4.idealista']"
     - "img[src*='idealista.it']"
     - "picture img"
     - "img"
   description:
     - "div.item-description"
+    - "p.ellipsis"
     - "[class*='item-description']"
     - "[class*='description']"
 
@@ -130,6 +134,8 @@ detail_selectors:
     - "[class*='energy-certificate']"
     - "[class*='energy']"
   agency:
+    # .advertiser-name is a direct div (confirmed live April 2026)
+    - ".advertiser-name"
     - "div.advertiser-name"
     - "[class*='advertiser-name']"
     - "[class*='advertiser']"

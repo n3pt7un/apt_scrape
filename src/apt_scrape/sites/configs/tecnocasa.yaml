@@ -1,0 +1,123 @@
+site_id: tecnocasa
+display_name: Tecnocasa.it
+base_url: https://www.tecnocasa.it
+domain_pattern: 'tecnocasa\.it'
+
+# URL pattern: /affitto/immobili/lombardia/milano/milano.html?<query_params>
+# City is fixed to Milano (lombardia/milano/milano). No area granularity available.
+# Filters are standard query parameters.
+search_path_template: "/{operation}/immobili/lombardia/{city}/{city}.html"
+
+# Query parameter map for filters
+query_param_map:
+  min_price: min_price
+  max_price: max_price
+  min_sqm: min_surface
+  max_sqm: max_surface
+  min_rooms: min_rooms
+  max_rooms: max_rooms
+  property_type: property_type
+
+# Pagination: path-based segment /pag-{page} injected before the query string.
+# Page 1 has no segment; page 2+ uses /pag-{page}.
+# Handled by the adapter's build_search_url override.
+page_param: page
+
+# property_type query param value: 1 = appartamenti/residenziale
+property_type_map:
+  appartamenti: "1"
+  case: "1"
+  attici: "1"
+  loft: "1"
+
+operation_map:
+  affitto: affitto
+  vendita: vendita
+
+# Wait for listing cards to appear
+search_wait_selector: "div.estate-card"
+detail_wait_selector: "div.estate-data-container"
+
+# Tecnocasa renders server-side HTML — no JS hydration delay needed
+page_load_wait: domcontentloaded
+search_wait_timeout: 15000
+
+search_selectors:
+  listing_card:
+    - "div.estate-card"
+  title:
+    # h3 inside the card titles container
+    - "h3.estate-card-title"
+    - "h3[class*='estate-card-title']"
+  price:
+    - "div.estate-card-current-price"
+    - "[class*='estate-card-current-price']"
+    - "[class*='current-price']"
+  features:
+    # Individual feature elements: rooms, surface, bathrooms
+    - "div.estate-card-data-element"
+    - "[class*='estate-card-data-element']"
+  address:
+    # h4 subtitle contains "City, Street - Neighbourhood"
+    - "h4.estate-card-subtitle"
+    - "h4[class*='estate-card-subtitle']"
+  thumbnail:
+    # Images load directly into src (no lazy loading observed)
+    - "img[src*='cdn-media.medialabtc']"
+    - "img[src*='medialabtc.it']"
+    - "div.estate-carousel-image img"
+    - "img"
+  description:
+    # No description snippet on search cards — empty on this site
+    - "div.estate-card-description"
+    - "[class*='estate-card-description']"
+
+detail_selectors:
+  title:
+    - "h1.estate-title"
+    - "h1"
+  price:
+    - "span.current-price"
+    - "[class*='current-price']"
+    - "[class*='estate-price']"
+  description:
+    - "div.estate-description"
+    - "[class*='estate-description']"
+    - "[class*='description']"
+  features_keys:
+    # Characteristics are in alternating div.col inside div.row.border-radius.bg-white.padding-flex
+    - "div.row.border-radius.bg-white.padding-flex div.col:nth-child(odd)"
+    - "div.costs-container div.col:nth-child(odd)"
+  features_values:
+    - "div.row.border-radius.bg-white.padding-flex div.col:nth-child(even)"
+    - "div.costs-container div.col:nth-child(even)"
+  address:
+    - "div.address"
+    - "[class*='address']"
+  photos:
+    - "img[src*='cdn-media.medialabtc']"
+    - "img[src*='medialabtc.it']"
+  energy_class:
+    # Active energy class is the .square.active element
+    - ".square.active"
+    - "[class*='energy'] .square.active"
+    - "[class*='energy-graph'] .active"
+  agency:
+    - "div.agency-heading-data"
+    - "[class*='agency-heading-data']"
+    - "[class*='agency-data']"
+  costs_keys:
+    - "div.costs-container div.col:nth-child(odd)"
+    - "[class*='costs'] div.col:nth-child(odd)"
+  costs_values:
+    - "div.costs-container div.col:nth-child(even)"
+    - "[class*='costs'] div.col:nth-child(even)"
+
+login_url: "https://www.tecnocasa.it/login"
+
+# Conservative rate limits — Tecnocasa is a smaller Italian portal
+min_request_delay: 3.0
+max_request_delay: 6.0
+
+# Only standard listing detail URLs contain the numeric ID pattern
+detail_url_contains: "/affitto/appartamenti/"

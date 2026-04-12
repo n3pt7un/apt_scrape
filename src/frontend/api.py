@@ -20,6 +20,7 @@ DEFAULT_AREAS_BY_SITE = {
         "bicocca", "niguarda", "precotto", "loreto", "citta-studi",
         "lambrate", "turro", "greco-segnano", "crescenzago", "centrale",
     ],
+    "tecnocasa": ["milano"],  # city-wide only, no sub-area support
 }
 
 
