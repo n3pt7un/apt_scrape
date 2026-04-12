@@ -33,7 +33,7 @@ for c in configs:
             all_areas.add(a)
 
 # ── Horizontal filter bar ────────────────────────────────────────────────────
-f1, f2, f3, f4, f5, f6 = st.columns([2, 1, 1, 2, 1, 2])
+f1, f2, f3, f4, f5, f6, f7 = st.columns([2, 1, 1, 1, 1, 1, 2])
 
 with f1:
     selected_configs = st.multiselect("Config", list(config_options.keys())[1:], default=[], key="lst_configs")
@@ -45,9 +45,11 @@ with f4:
     price_max = st.number_input("Max €", min_value=0, value=0, step=100, key="lst_price_max",
                                  help="0 = no limit")
 with f5:
-    date_preset = st.selectbox("Period", ["7 days", "30 days", "All time"], index=0, key="lst_date")
+    selected_areas = st.multiselect("Area", sorted(all_areas), default=[], key="lst_areas")
 with f6:
-    search_text = st.text_input("Search title / area", placeholder="e.g. bicocca", key="lst_search")
+    date_preset = st.selectbox("Period", ["7 days", "30 days", "All time"], index=0, key="lst_date")
+with f7:
+    search_text = st.text_input("Search title", placeholder="e.g. bilocale", key="lst_search")
 
 # ── Build API params ─────────────────────────────────────────────────────────
 params: dict = {"limit": 500}
@@ -82,6 +84,10 @@ except Exception as e:
 if len(selected_configs) > 1:
     selected_ids = {config_options[name] for name in selected_configs if config_options.get(name)}
     listings = [l for l in listings if l.get("config_id") in selected_ids]
+
+# Client-side area filter
+if selected_areas:
+    listings = [l for l in listings if l.get("area", "") in selected_areas]
 
 # Client-side price filter
 if price_min > 0 or price_max > 0:

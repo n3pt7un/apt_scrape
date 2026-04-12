@@ -113,10 +113,18 @@ if health:
     cost_prev = health.get("ai_cost_prev_7d", 0)
     cost_7d = health.get("ai_cost_7d", 0)
     if cost_prev > 0 and cost_7d > cost_prev * 2:
-        cost_status = "warning"
+        cost_color_status = "warning"
     else:
-        cost_status = "healthy"
-    _health_metric(h5, "AI Cost (7d)", cost_status, cost_val)
+        cost_color_status = "healthy"
+    color = theme.health_color(cost_color_status)
+    dot = theme.status_dot(color, size=10)
+    h5.markdown(
+        f'{dot} <span style="color:{theme.TEXT_SECONDARY};font-size:0.75rem;'
+        f'text-transform:uppercase;letter-spacing:0.05em">AI Cost (7d)</span><br>'
+        f'<span style="font-family:{theme.MONO_FONT};font-size:1.2rem;'
+        f'color:{theme.TEXT_PRIMARY}">{cost_val}</span>',
+        unsafe_allow_html=True,
+    )
 
 st.markdown("---")
 
