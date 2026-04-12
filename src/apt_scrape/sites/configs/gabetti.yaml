@@ -1,0 +1,114 @@
+site_id: gabetti
+display_name: Gabetti.it
+base_url: https://www.gabetti.it
+domain_pattern: 'gabetti\.it'
+
+# URL pattern: /affitto/{city}?prezzoMin=X&prezzoMax=Y&mqMin=A&mqMax=B&numLocaliMin=N&page=P
+# City is fixed to Milano (city-wide only, no area granularity).
+# Filters are standard query parameters. Pagination via &page=N query param.
+search_path_template: "/{operation}/{city}"
+
+# Query parameter map for filters
+query_param_map:
+  min_price: prezzoMin
+  max_price: prezzoMax
+  min_sqm: mqMin
+  max_sqm: mqMax
+  min_rooms: numLocaliMin
+  max_rooms: numLocaliMax
+  page: page
+
+# Pagination: query param &page=N (page 1 = no param or page=1)
+page_param: page
+
+property_type_map:
+  appartamenti: appartamento
+  case: casa
+  attici: attico
+  loft: loft
+
+operation_map:
+  affitto: affitto
+  vendita: vendita
+
+# Wait for listing cards to appear
+search_wait_selector: "a[data-uw-original-href*='/affitto/milano/']"
+detail_wait_selector: "h1"
+
+# Gabetti is a Next.js SSR app — pages load quickly
+page_load_wait: domcontentloaded
+search_wait_timeout: 15000
+
+search_selectors:
+  listing_card:
+    # Each card is an anchor tag with data-uw-original-href pointing to a listing URL
+    - "a[data-uw-original-href*='/affitto/milano/']"
+    - "a[data-uw-original-href*='/affitto/']"
+  title:
+    # No separate title element on Gabetti search cards; address serves as title
+    - "p.line-clamp-2"
+  price:
+    - "div.t-body-big"
+    - "[class*='t-body-big']"
+  features:
+    # Feature container div with t-body-medium class contains span children
+    # Individual spans: "51 m²", "2 locali", "1 bagno"
+    - "div.t-body-medium span"
+    - "[class*='t-body-medium'] span"
+  address:
+    - "p.line-clamp-2"
+    - "p[class*='line-clamp']"
+  thumbnail:
+    - "img[src*='api.gabettigroup.com/images-web']"
+    - "img[data-src*='api.gabettigroup.com/images-web']"
+    - "img"
+  description:
+    # No description snippet on search cards
+    - "p.line-clamp-3"
+    - "[class*='line-clamp-3']"
+
+detail_selectors:
+  title:
+    - "h1"
+    - "h1.t-h3"
+  price:
+    - "h2.t-h2"
+    - "h2"
+  description:
+    # Main description div with line-clamp-12 class
+    - "div[class*='line-clamp-12']"
+    - "div[class*='whitespace-break-spaces']"
+    - "[class*='line-clamp-12']"
+  features_keys:
+    # DT/DD pairs in characteristics section
+    - "dt"
+  features_values:
+    - "dd"
+  address:
+    # H1 contains full address: "Appartamento in Via Barnaba Oriani 55/C, Milano (MI)"
+    - "h1"
+    - "h1.t-h3"
+  photos:
+    - "img[src*='api.gabettigroup.com/images-web']"
+    - "img[src*='gabettigroup.com']"
+  energy_class:
+    # Energy class is a DD with single letter A-G
+    - "dd.t-body-small"
+    - "dd"
+  agency:
+    # Agency name in a p.t-body-big element
+    - "p.t-body-big"
+    - "[class*='t-body-big']"
+  costs_keys:
+    - "dt"
+  costs_values:
+    - "dd"
+
+login_url: "https://www.gabetti.it/login"
+
+# Conservative rate limits
+min_request_delay: 3.0
+max_request_delay: 6.0
+
+# Detail URLs contain the numeric ID pattern
+detail_url_contains: "/affitto/milano/appartamento/"

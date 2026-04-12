@@ -21,6 +21,7 @@ DEFAULT_AREAS_BY_SITE = {
         "lambrate", "turro", "greco-segnano", "crescenzago", "centrale",
     ],
     "tecnocasa": ["milano"],  # city-wide only, no sub-area support
+    "gabetti": ["milano"],   # city-wide only, no sub-area support
 }
 
 

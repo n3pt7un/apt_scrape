@@ -38,6 +38,7 @@ from .base import (
     extract_text,
 )
 from .casa import CasaAdapter
+from .gabetti import GabettiAdapter
 from .idealista import IdealistaAdapter
 from .immobiliare import ImmobiliareAdapter
 from .tecnocasa import TecnocasaAdapter
@@ -46,6 +47,7 @@ __all__ = [
     "ADAPTERS",
     "ClassifyResult",
     "DetailSelectors",
+    "GabettiAdapter",
     "ListingDetail",
     "ListingSummary",
     "SearchFilters",
@@ -76,6 +78,7 @@ ADAPTERS: list[SiteAdapter] = [
     CasaAdapter(),
     IdealistaAdapter(),
     TecnocasaAdapter(),
+    GabettiAdapter(),
 ]
 
 _BY_ID: dict[str, SiteAdapter] = {a.site_id: a for a in ADAPTERS}
@@ -87,6 +90,7 @@ _CONFIG_PATHS: dict[str, tuple[type[SiteAdapter], str]] = {
     "casa": (CasaAdapter, str(_PACKAGE_DIR / "configs" / "casa.yaml")),
     "idealista": (IdealistaAdapter, str(_PACKAGE_DIR / "configs" / "idealista.yaml")),
     "tecnocasa": (TecnocasaAdapter, str(_PACKAGE_DIR / "configs" / "tecnocasa.yaml")),
+    "gabetti": (GabettiAdapter, str(_PACKAGE_DIR / "configs" / "gabetti.yaml")),
 }
 
 
