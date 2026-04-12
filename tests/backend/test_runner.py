@@ -44,11 +44,13 @@ def test_run_config_job_creates_job_record():
     with (
         patch("backend.runner.fetcher") as mock_fetcher,
         patch("backend.runner.get_adapter_with_overrides") as mock_get_adapter,
-        patch("apt_scrape.stages.EnrichStage.process", new_callable=AsyncMock) as mock_enrich_process,
+        patch("backend.runner.enrich_with_details", new_callable=AsyncMock) as mock_enrich,
+        patch("backend.runner.enrich_post_dates", new_callable=AsyncMock) as mock_post_dates,
     ):
         mock_fetcher.fetch = AsyncMock(return_value=fake_html)
         mock_fetcher.fetch_with_retry = AsyncMock(return_value=fake_html)
-        mock_enrich_process.side_effect = lambda self, item: item  # pass-through
+        mock_enrich.return_value = (1, [])
+        mock_post_dates.return_value = (0, [])
         mock_adapter = MagicMock()
         mock_adapter.build_search_url.return_value = "https://example.com/search"
         mock_adapter.parse_search.return_value = fake_listings

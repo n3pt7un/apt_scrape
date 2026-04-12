@@ -1,7 +1,6 @@
 """backend.runner — Core job execution pipeline.
 
-Pipeline order: scrape → dedup → enrich → analyse → notion_push → upsert
-Uses the streaming Pipeline with Stage-based processing.
+Pipeline order: scrape → dedup → check known → enrich new → analyse new → notion push → upsert
 """
 
 import asyncio
@@ -13,6 +12,7 @@ from typing import Callable
 
 from sqlmodel import Session, select as sql_select
 
+from apt_scrape.enrichment import enrich_post_dates, enrich_with_details
 from apt_scrape.server import fetcher
 from apt_scrape.sites import SearchFilters, get_adapter_with_overrides, list_adapters
 
@@ -177,64 +177,126 @@ async def run_config_job(
         # --- Pipeline processing ---
         scraped_count = len(all_listings)
 
-        from apt_scrape.pipeline import Pipeline
-        from apt_scrape.stages import DedupStage, EnrichStage, AnalyseStage, NotionPushStage
-
-        dedup = DedupStage()
-        stages: list = [dedup]
-
-        stages.append(EnrichStage(fetcher, adapter))
-
-        if auto_analyse:
-            from apt_scrape.analysis import load_preferences
-            try:
-                prefs = load_preferences()
-                stages.append(AnalyseStage(prefs))
-            except FileNotFoundError:
-                _log("[warn] preferences.txt not found — skipping analysis.")
-
-        if auto_notion_push:
-            stages.append(NotionPushStage())
-
-        pipeline = Pipeline(stages)
-        for listing_dict in all_listings:
-            _check_cancel()
-            await pipeline.push(listing_dict)
-        await pipeline.finish()
-
-        stats = pipeline.stats()
-        _log(f"Pipeline stats: {stats}")
-
-        # Collect token usage from AnalyseStage if present
-        ai_usage: dict | None = None
-        for stage in pipeline._stages:
-            if hasattr(stage, 'tokens_used'):
-                ai_usage = {
-                    'tokens_used': stage.tokens_used,
-                    'cost_usd': stage.estimated_cost_usd(),
-                }
-                break
-
-        # Stamp area/city on all listings
+        # Deduplicate by URL
+        seen: set[str] = set()
+        deduped: list[dict] = []
         for listing in all_listings:
+            key = str(listing.get("url", "")).strip()
+            if key and key not in seen:
+                seen.add(key)
+                deduped.append(listing)
+        dupes_removed = scraped_count - len(deduped)
+        _log(f"Deduplicated: {len(deduped)} unique listings ({dupes_removed} in-run dupes removed)")
+
+        # ── 2a. Sync Notion → local DB (bulk fetch, then upsert stubs) ──
+        notion_synced = 0
+        if auto_notion_push:
+            _log("Syncing Notion listings to local DB (bulk fetch)...")
+            try:
+                from apt_scrape.notion_push import fetch_all_notion_listings
+                notion_url_map = await fetch_all_notion_listings(log_fn=_log)
+                if notion_url_map:
+                    with Session(engine) as session:
+                        existing_urls = {
+                            row.url
+                            for row in session.exec(
+                                sql_select(Listing).where(
+                                    Listing.url.in_(list(notion_url_map.keys()))
+                                )
+                            ).all()
+                        }
+                        now = datetime.utcnow()
+                        for n_url, n_page_id in notion_url_map.items():
+                            if n_url not in existing_urls:
+                                session.add(Listing(
+                                    url=n_url, job_id=job_id, config_id=config_id,
+                                    notion_page_id=n_page_id, scraped_at=now,
+                                ))
+                                notion_synced += 1
+                        if notion_synced:
+                            session.commit()
+                    _log(f"Notion sync complete: {len(notion_url_map)} in Notion, {notion_synced} new stubs saved to local DB")
+                else:
+                    _log("Notion sync: database is empty or not configured")
+            except Exception as e:
+                _log(f"[warn] Notion sync failed (continuing without): {e}")
+
+        # ── 2b. Filter out already-known listings ──
+        with Session(engine) as session:
+            deduped_urls = [str(l.get("url", "")).strip() for l in deduped if l.get("url")]
+            known_rows = {
+                row.url: row
+                for row in session.exec(
+                    sql_select(Listing).where(Listing.url.in_(deduped_urls))
+                ).all()
+            }
+
+        new_listings = []
+        already_known = []
+        for listing in deduped:
+            url = str(listing.get("url", "")).strip()
+            existing = known_rows.get(url)
+            if existing:
+                # Carry over Notion page ID so push_listings can skip them
+                if existing.notion_page_id:
+                    listing["notion_skipped"] = True
+                    listing["notion_page_id"] = existing.notion_page_id
+                already_known.append(listing)
+            else:
+                new_listings.append(listing)
+
+        _log(f"Pre-enrichment filter: {len(new_listings)} new, {len(already_known)} already in DB → skipping enrichment for known listings")
+
+        # ── 3. Enrich details (new listings only) ──
+        if new_listings:
+            _check_cancel()
+            _log(f"Enriching {len(new_listings)} new listings (concurrency={detail_concurrency})...")
+            await enrich_with_details(
+                new_listings, fetcher, adapter, None,
+                concurrency=detail_concurrency,
+                rotate_every_batches=vpn_rotate_batches,
+            )
+
+            # 4. Enrich post dates
+            _check_cancel()
+            _log(f"Enriching post dates for {len(new_listings)} new listings...")
+            await enrich_post_dates(
+                new_listings, fetcher, adapter,
+                concurrency=detail_concurrency,
+                rotate_every_batches=vpn_rotate_batches,
+            )
+        else:
+            _log("No new listings to enrich — all already known.")
+
+        # 5. Stamp area/city
+        for listing in deduped:
             listing["_area"] = listing.pop("_search_area", "")
             listing["_city"] = city_slug
 
-        # Collect deduplicated results for DB upsert
-        # The dedup stage tracked unique URLs — rebuild from all_listings
-        deduped = []
-        seen_urls = set()
-        for listing in all_listings:
-            url = str(listing.get("url", "")).strip()
-            if url and url not in seen_urls:
-                seen_urls.add(url)
-                deduped.append(listing)
+        # ── 6. AI Analysis (new listings only) ──
+        ai_usage: dict = {}
+        if auto_analyse and new_listings:
+            _check_cancel()
+            _log(f"Running AI analysis on {len(new_listings)} new listings...")
+            from apt_scrape.analysis import analyse_listings, load_preferences
+            try:
+                prefs = load_preferences()
+                ai_usage = await analyse_listings(new_listings, prefs)
+                _log(f"Analysis complete: ~{ai_usage.get('tokens_used', 0)} tokens, ${ai_usage.get('cost_usd', 0):.4f}")
+            except FileNotFoundError:
+                _log("[warn] preferences.txt not found — skipping analysis.")
+        elif auto_analyse:
+            _log("Skipping AI analysis — no new listings.")
 
-        dupes_removed = scraped_count - len(deduped)
-        _log(f"Total unique listings: {len(deduped)} ({dupes_removed} dupes removed)")
+        # ── 7. Notion Push ──
+        if auto_notion_push and deduped:
+            _log(f"Pushing to Notion ({len(new_listings)} new, {len(already_known)} pre-existing)...")
+            from apt_scrape.notion_push import push_listings
+            await push_listings(deduped)
+            _log("Notion push complete.")
 
-        # 8. Upsert listings to DB
-        _log("Upserting listings to DB...")
+        # ── 8. Upsert all listings to DB ──
+        _log("Upserting listings to local DB...")
         with Session(engine) as session:
             urls = [str(l.get("url", "")).strip() for l in deduped if l.get("url")]
             existing_map = {
@@ -242,6 +304,8 @@ async def run_config_job(
                 for row in session.exec(sql_select(Listing).where(Listing.url.in_(urls))).all()
             }
             now = datetime.utcnow()
+            upserted_new = 0
+            upserted_existing = 0
             for listing in deduped:
                 url = str(listing.get("url", "")).strip()
                 if not url:
@@ -262,11 +326,14 @@ async def run_config_job(
                     for k, v in row_data.items():
                         setattr(existing, k, v)
                     session.add(existing)
+                    upserted_existing += 1
                 else:
                     session.add(Listing(**row_data))
+                    upserted_new += 1
             session.commit()
+        _log(f"DB upsert: {upserted_new} inserted, {upserted_existing} updated")
 
-        # 9. Mark job done with stats
+        # ── 9. Mark job done with stats ──
         area_stats: dict[str, int] = {}
         for listing in deduped:
             a = listing.get("_area") or ""
@@ -285,7 +352,11 @@ async def run_config_job(
             session.add(job)
             session.commit()
 
-        _log(f"Job complete. {len(deduped)} listings processed.")
+        _log(
+            f"Job complete: {scraped_count} scraped → {dupes_removed} in-run dupes "
+            f"→ {len(deduped)} unique ({len(new_listings)} new, {len(already_known)} known) "
+            f"→ {len(new_listings)} enriched & analysed"
+        )
         return job_id
 
     except JobCancelled:
