@@ -6,8 +6,6 @@ Uses Camoufox (patched Firefox with anti-fingerprinting). Includes:
 - Full browser restart every M requests
 - Block detection (DataDome, CAPTCHA, Cloudflare)
 - Integration with ProxyProvider for proxy rotation
-- Local pproxy relay for authenticated HTTP proxies (Playwright/Firefox
-  does not support HTTP proxy auth natively)
 - Hard timeout on every fetch via asyncio.wait_for
 """
 
@@ -17,8 +15,6 @@ import asyncio
 import logging
 import os
 import re
-import socket
-import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -71,66 +67,9 @@ class Fetcher:
         self._browser = None
         self._context = None
         self._camoufox_ctx = None
-        self._relay_proc = None
-        self._relay_port: int = 0
         self._total_requests = 0
         self._pages_in_session = 0
         self._lock = asyncio.Lock()
-
-    @staticmethod
-    def _free_port() -> int:
-        """Return an available local TCP port."""
-        with socket.socket() as s:
-            s.bind(("", 0))
-            return s.getsockname()[1]
-
-    async def _start_relay(self) -> None:
-        """Start a local unauthenticated HTTP relay via pproxy.
-
-        Playwright/Firefox does not support HTTP proxy authentication natively.
-        pproxy listens on localhost without auth and forwards to the IPRoyal
-        endpoint with credentials. Format: -r http://host:port#user:pass
-        """
-        await self._stop_relay()
-
-        creds = self._proxy.get_proxy_credentials()
-        host_port = self._proxy.get_proxy_host_port()
-        if not host_port or not creds:
-            return
-
-        self._relay_port = self._free_port()
-        remote = f"{host_port}#{creds[0]}:{creds[1]}"
-
-        self._relay_proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "pproxy",
-            "-l", f"http://127.0.0.1:{self._relay_port}",
-            "-r", remote,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await asyncio.sleep(1.0)
-
-        if self._relay_proc.returncode is not None:
-            logger.error("pproxy relay failed to start (exit code %d).", self._relay_proc.returncode)
-            self._relay_proc = None
-            self._relay_port = 0
-            return
-
-        logger.info("HTTP relay started: 127.0.0.1:%d -> %s", self._relay_port, host_port)
-
-    async def _stop_relay(self) -> None:
-        """Stop the pproxy relay process."""
-        if self._relay_proc is not None:
-            try:
-                self._relay_proc.terminate()
-                await asyncio.wait_for(self._relay_proc.wait(), timeout=3)
-            except (asyncio.TimeoutError, ProcessLookupError):
-                try:
-                    self._relay_proc.kill()
-                except ProcessLookupError:
-                    pass
-            self._relay_proc = None
-            self._relay_port = 0
 
     async def _ensure_browser(self) -> None:
         """Start Camoufox browser if not running, or restart if threshold reached."""
@@ -146,17 +85,17 @@ class Fetcher:
         self._camoufox_ctx = AsyncCamoufox(headless=self._headless)
         self._browser = await self._camoufox_ctx.__aenter__()
 
-        # Proxy: start relay if needed, then pass unauthenticated proxy to context
-        proxy_dict = None
-        if self._proxy.get_proxy_host_port():
-            await self._start_relay()
-            if self._relay_port:
-                proxy_dict = {"server": f"http://127.0.0.1:{self._relay_port}"}
-                logger.info("Browser using proxy via relay: 127.0.0.1:%d", self._relay_port)
-
+        # Proxy: pass credentials directly to the browser context.
+        # Playwright supports proxy auth via username/password fields.
         ctx_kwargs: dict = {}
-        if proxy_dict:
+        if self._proxy.get_proxy_host_port():
+            creds = self._proxy.get_proxy_credentials()
+            proxy_dict: dict = {"server": self._proxy.get_proxy_host_port()}
+            if creds:
+                proxy_dict["username"] = creds[0]
+                proxy_dict["password"] = creds[1]
             ctx_kwargs["proxy"] = proxy_dict
+            logger.info("Browser using proxy: %s", self._proxy.get_proxy_host_port())
         self._context = await self._browser.new_context(**ctx_kwargs)
         # Disable Brotli to avoid garbled content with certain sites
         await self._context.set_extra_http_headers(
@@ -183,7 +122,6 @@ class Fetcher:
             self._browser = None
             self._camoufox_ctx = None
             logger.info("Browser closed.")
-        await self._stop_relay()
 
     async def _recycle_if_needed(self) -> None:
         """Rotate proxy and restart browser periodically."""

@@ -787,6 +787,76 @@ async def _run_login(site_id: str, identifier: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Proxy diagnostic
+# ---------------------------------------------------------------------------
+
+
+@cli.command("check-proxy")
+def check_proxy() -> None:
+    """Test proxy connectivity and report exit IP."""
+    asyncio.run(_check_proxy())
+
+
+async def _check_proxy() -> None:
+    from apt_scrape.proxy import create_proxy_provider
+
+    proxy = create_proxy_provider()
+    click.echo(f"Provider: {proxy.__class__.__name__}")
+
+    proxy_url = proxy.get_proxy_url()
+    if not proxy_url:
+        click.echo("No proxy configured. All traffic goes direct.", err=True)
+        # Show direct IP for comparison
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get("https://httpbin.org/ip")
+            click.echo(f"Direct IP: {r.json()['origin']}")
+        return
+
+    # Mask credentials in display
+    host_port = proxy.get_proxy_host_port()
+    click.echo(f"Proxy endpoint: {host_port}")
+
+    import httpx
+
+    # 1) Test via raw httpx (no browser) to isolate proxy from Camoufox
+    click.echo("\n--- httpx through proxy (no browser) ---")
+    try:
+        async with httpx.AsyncClient(proxy=proxy_url, timeout=15) as c:
+            r = await c.get("https://httpbin.org/ip")
+            click.echo(f"Exit IP (httpx): {r.json()['origin']}")
+    except Exception as exc:
+        click.echo(f"httpx proxy test FAILED: {exc}", err=True)
+
+    # 2) Test via actual Camoufox browser
+    click.echo("\n--- Camoufox browser ---")
+    from apt_scrape.browser import Fetcher
+    f = Fetcher(proxy_provider=proxy, headless=True)
+    try:
+        await f._ensure_browser()
+        page = await f._context.new_page()
+        try:
+            await page.goto("https://httpbin.org/ip", timeout=20000)
+            body = await page.inner_text("body")
+            click.echo(f"Exit IP (browser): {body.strip()}")
+        finally:
+            await page.close()
+    finally:
+        await f.close()
+
+    # 3) Direct IP for comparison
+    click.echo("\n--- Direct connection (no proxy) ---")
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get("https://httpbin.org/ip")
+            click.echo(f"Direct IP: {r.json()['origin']}")
+    except Exception as exc:
+        click.echo(f"Direct test failed: {exc}", err=True)
+
+    click.echo("\nIf Exit IP != Direct IP, the proxy is working.")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
