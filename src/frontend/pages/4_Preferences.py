@@ -4,8 +4,11 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import api
 
-st.set_page_config(page_title="Preferences", page_icon="🧠", layout="wide")
-st.title("🧠 LLM Evaluation Preferences")
+import theme
+
+st.set_page_config(page_title="Preferences", page_icon="⚡", layout="wide")
+theme.apply_theme()
+st.title("Preferences")
 st.caption("This text is passed to the AI to score listings 0–100. Changes take effect on the next job run.")
 
 try:

@@ -7,8 +7,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import streamlit as st
 import api
 
-st.set_page_config(page_title="Search Configs", page_icon="⚙️", layout="wide")
-st.title("⚙️ Search Configurations")
+import theme
+
+st.set_page_config(page_title="Search Configs", page_icon="⚡", layout="wide")
+theme.apply_theme()
+st.title("Search Configs")
 
 @st.dialog("Search Configuration", width="large")
 def config_dialog(edit_data=None):
@@ -207,7 +210,7 @@ if configs:
                     try:
                         api.post(f"/configs/{cfg['id']}/run")
                         st.success("Job started!")
-                        st.switch_page("pages/2_Monitor.py")
+                        st.switch_page("pages/1_Operations.py")
                     except Exception as e:
                         st.error(str(e))
                 label = "Enable" if not cfg["enabled"] else "Disable"

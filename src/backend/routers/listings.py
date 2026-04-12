@@ -1,6 +1,7 @@
 """backend.routers.listings — Listing queries and Notion push operations."""
 import json as _json_mod
 import os
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +15,13 @@ from apt_scrape.notion_push import mark_notion_duplicates, push_listings
 router = APIRouter()
 
 
+def _parse_price(price_str: str) -> Optional[float]:
+    """Extract a numeric value from strings like '€ 1.200/mese' or '45 m²'."""
+    cleaned = price_str.replace(".", "").replace(",", ".")
+    m = re.search(r"(\d+(?:\.\d+)?)", cleaned)
+    return float(m.group(1)) if m else None
+
+
 @router.get("")
 def list_listings(
     config_id: Optional[int] = Query(None),
@@ -21,6 +29,8 @@ def list_listings(
     min_score: Optional[int] = Query(None),
     max_score: Optional[int] = Query(None),
     search: Optional[str] = Query(None),
+    area: Optional[str] = Query(None),
+    days: Optional[int] = Query(None),
     limit: int = Query(200, le=1000),
     offset: int = Query(0),
     session: Session = Depends(get_session),
@@ -43,6 +53,12 @@ def list_listings(
                 Listing.city.like(q),
             )
         )
+    if area:
+        stmt = stmt.where(Listing.area == area)
+    if days is not None and days > 0:
+        from datetime import datetime, timedelta
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        stmt = stmt.where(Listing.scraped_at >= cutoff)
     stmt = stmt.offset(offset).limit(limit)
     listings = session.exec(stmt).all()
 
@@ -57,6 +73,10 @@ def list_listings(
         d = lst.model_dump()
         d.pop("raw_json", None)
         d["config_name"] = configs.get(lst.config_id, "")
+        # Computed: price per sqm
+        price = _parse_price(lst.price or "")
+        sqm = _parse_price(lst.sqm or "")
+        d["price_per_sqm"] = round(price / sqm, 1) if price and sqm and sqm > 0 else None
         result.append(d)
     return result
 

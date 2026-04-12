@@ -11,8 +11,11 @@ try:
 except ImportError:
     yaml = None
 
-st.set_page_config(page_title="Site Settings", page_icon="🔧", layout="wide")
-st.title("🔧 Site Settings")
+import theme
+
+st.set_page_config(page_title="Site Settings", page_icon="⚡", layout="wide")
+theme.apply_theme()
+st.title("Site Settings")
 st.caption("View current areas and full config. Edit overrides as YAML and save, or save a copy as a test variant.")
 
 try:
