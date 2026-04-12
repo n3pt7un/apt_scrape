@@ -1,4 +1,4 @@
-"""frontend.app — Streamlit multi-page app entry point."""
+"""frontend.app — Streamlit multi-page app entry point. Redirects to Operations."""
 import streamlit as st
 import os
 from dotenv import load_dotenv
@@ -7,58 +7,10 @@ load_dotenv()
 
 st.set_page_config(
     page_title="apt_scrape",
-    page_icon="🏠",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Check missing environment variables
-required_envs = [
-    "OPENROUTER_API_KEY",
-    "NOTION_API_KEY",
-    "NOTION_APARTMENTS_DB_ID",
-    "NOTION_AREAS_DB_ID",
-    "NOTION_AGENCIES_DB_ID"
-]
-missing_envs = [var for var in required_envs if not os.environ.get(var)]
-
-if missing_envs:
-    st.warning(
-        "⚠️ **Missing Environment Variables Detected!**\n\n"
-        "The following required environment variables are not set or are empty:\n"
-        + "".join([f"- `{var}`\n" for var in missing_envs])
-        + "\nYou won't be able to run tasks properly without a complete setup."
-    )
-
-# Hero
-st.markdown("# 🏠 apt_scrape")
-st.markdown(
-    "**Run and monitor apartment scrapes** from Immobiliare, Casa.it, and Idealista — one place for search configs, jobs, and listings."
-)
-st.markdown("---")
-
-# Navigation: cards with bordered containers
-st.subheader("Go to")
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    with st.container(border=True):
-        st.page_link("pages/1_Search_Configs.py", label="Search Configurations", icon="⚙️")
-        st.caption("Create and edit search configs, set schedules and rate limits, run jobs.")
-with col2:
-    with st.container(border=True):
-        st.page_link("pages/2_Monitor.py", label="Job Monitor", icon="📡")
-        st.caption("Watch running jobs and recent run history.")
-    with st.container(border=True):
-        st.page_link("pages/4_Listings.py", label="Listings", icon="📋")
-        st.caption("Browse scraped listings and AI analysis.")
-with col3:
-    with st.container(border=True):
-        st.page_link("pages/5_Site_Settings.py", label="Site Settings", icon="🔧")
-        st.caption("Override areas and selectors per site.")
-    with st.container(border=True):
-        st.page_link("pages/3_Preferences.py", label="Preferences", icon="📌")
-        st.caption("Global preferences and paths.")
-
-st.markdown("---")
-st.caption("Use the sidebar to switch pages anytime.")
+# Redirect to Operations (the real landing page)
+st.switch_page("pages/1_Operations.py")
