@@ -301,6 +301,49 @@ def _build_properties(
 # ---------------------------------------------------------------------------
 
 
+async def fetch_all_notion_listings(
+    log_fn: Optional[callable] = None,
+) -> dict[str, str]:
+    """Fetch all listing URLs from Notion Apartments DB in bulk (paginated).
+
+    Returns a dict mapping ``{listing_url: notion_page_id}``.
+    Much faster than checking one-by-one with ``_is_duplicate``.
+    """
+    api_key = os.environ.get("NOTION_API_KEY", "")
+    apartments_db_id = os.environ.get("NOTION_APARTMENTS_DB_ID", "")
+    if not api_key or not apartments_db_id:
+        return {}
+
+    _log = log_fn or (lambda msg: None)
+    url_to_page: dict[str, str] = {}
+
+    async with AsyncClient(auth=api_key) as client:
+        start_cursor: Optional[str] = None
+        page_num = 0
+        while True:
+            page_num += 1
+            kwargs: dict = {
+                "database_id": apartments_db_id,
+                "filter_properties": ["Listing URL"],
+                "page_size": 100,
+            }
+            if start_cursor:
+                kwargs["start_cursor"] = start_cursor
+            resp = await client.databases.query(**kwargs)
+            for result in resp.get("results", []):
+                props = result.get("properties", {})
+                url_prop = props.get("Listing URL", {})
+                url_val = url_prop.get("url")
+                if url_val:
+                    url_to_page[url_val.strip()] = result["id"]
+            _log(f"  Notion sync page {page_num}: {len(resp.get('results', []))} entries (total so far: {len(url_to_page)})")
+            if not resp.get("has_more"):
+                break
+            start_cursor = resp.get("next_cursor")
+
+    return url_to_page
+
+
 async def mark_notion_duplicates(listings: list[dict]) -> int:
     """Check Notion for duplicates and mark them in-place to avoid re-enrichment.
     Returns the number of duplicates found.

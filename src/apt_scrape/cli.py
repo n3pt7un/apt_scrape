@@ -364,32 +364,61 @@ async def _run_search(
         eff_concurrency = detail_concurrency if detail_concurrency is not None else DETAIL_CONCURRENCY
         eff_rotate = vpn_rotate_batches if vpn_rotate_batches is not None else VPN_ROTATE_EVERY_BATCHES
 
-        if include_details and deduped:
+        # Pre-check Notion to skip enrichment for already-pushed listings
+        notion_known = 0
+        to_enrich = deduped
+        if push_notion and deduped:
+            click.echo("Checking Notion for already-pushed listings...", err=True)
+            try:
+                from apt_scrape.notion_push import fetch_all_notion_listings
+                notion_url_map = await fetch_all_notion_listings(
+                    log_fn=lambda msg: click.echo(msg, err=True),
+                )
+                if notion_url_map:
+                    for listing in deduped:
+                        url = str(listing.get("url", "")).strip()
+                        page_id = notion_url_map.get(url)
+                        if page_id:
+                            listing["notion_skipped"] = True
+                            listing["notion_page_id"] = page_id
+                            notion_known += 1
+                    to_enrich = [l for l in deduped if not l.get("notion_skipped")]
+                    click.echo(
+                        f"Notion pre-check: {notion_known} already in Notion, "
+                        f"{len(to_enrich)} new to enrich",
+                        err=True,
+                    )
+            except Exception as e:
+                click.echo(f"[warn] Notion pre-check failed (continuing): {e}", err=True)
+
+        if include_details and to_enrich:
+            click.echo(f"Enriching {len(to_enrich)} listings...", err=True)
             detail_enriched, detail_errors = await enrich_with_details(
-                deduped, browser, adapter, detail_limit,
+                to_enrich, browser, adapter, detail_limit,
                 concurrency=eff_concurrency,
                 rotate_every_batches=eff_rotate,
             )
 
-        post_date_enriched, post_date_errors = await enrich_post_dates(
-            deduped, browser, adapter,
-            concurrency=eff_concurrency,
-            rotate_every_batches=eff_rotate,
-        )
+        if to_enrich:
+            post_date_enriched, post_date_errors = await enrich_post_dates(
+                to_enrich, browser, adapter,
+                concurrency=eff_concurrency,
+                rotate_every_batches=eff_rotate,
+            )
 
         # Stamp area/city onto each listing for analysis and Notion push
         for listing in deduped:
             listing["_area"] = area_slug or ""
             listing["_city"] = city_slug
 
-        if analyse and deduped:
+        if analyse and to_enrich:
             from apt_scrape.analysis import analyse_listings, load_preferences
             try:
                 prefs = load_preferences()
             except FileNotFoundError as e:
                 click.echo(f"[warn] {e} — skipping AI analysis.", err=True)
             else:
-                await analyse_listings(deduped, prefs)
+                await analyse_listings(to_enrich, prefs)
 
         if push_notion and deduped:
             from apt_scrape.notion_push import push_listings
@@ -398,6 +427,8 @@ async def _run_search(
         return json.dumps(
             {
                 "count": len(deduped),
+                "new_listings": len(to_enrich),
+                "already_known": notion_known,
                 "source": adapter.config.display_name,
                 "search_url": adapter.build_search_url(ref),
                 "search_urls": search_urls,
