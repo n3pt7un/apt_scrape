@@ -198,13 +198,8 @@ if timeline:
                     line=dict(color=theme.CYAN, width=2),
                     fill="tozeroy", fillcolor="rgba(0,184,217,0.1)",
                 ))
-                fig_success.update_layout(
-                    **theme.PLOTLY_LAYOUT, height=200, showlegend=False,
-                    yaxis=dict(
-                        **theme.PLOTLY_LAYOUT["yaxis"],
-                        range=[0, 105], ticksuffix="%",
-                    ),
-                )
+                fig_success.update_layout(**theme.PLOTLY_LAYOUT, height=200, showlegend=False)
+                fig_success.update_layout(yaxis=dict(range=[0, 105], ticksuffix="%"))
                 st.plotly_chart(fig_success, use_container_width=True)
 
     with chart_right:
@@ -228,10 +223,10 @@ if timeline:
                 textposition="outside",
                 textfont=dict(color=theme.TEXT_SECONDARY, size=11),
             ))
+            fig_price.update_layout(**theme.PLOTLY_LAYOUT, height=280)
             fig_price.update_layout(
-                **theme.PLOTLY_LAYOUT, height=280,
-                yaxis=dict(**theme.PLOTLY_LAYOUT["yaxis"], autorange="reversed"),
-                xaxis=dict(**theme.PLOTLY_LAYOUT["xaxis"], title="€/sqm"),
+                yaxis=dict(autorange="reversed"),
+                xaxis=dict(title="€/sqm"),
             )
             st.plotly_chart(fig_price, use_container_width=True)
 
@@ -251,10 +246,8 @@ if timeline:
                 line=dict(color=theme.AMBER, width=2),
                 marker=dict(size=5, color=theme.AMBER),
             ))
-            fig_dur.update_layout(
-                **theme.PLOTLY_LAYOUT, height=200, showlegend=False,
-                yaxis=dict(**theme.PLOTLY_LAYOUT["yaxis"], title="seconds"),
-            )
+            fig_dur.update_layout(**theme.PLOTLY_LAYOUT, height=200, showlegend=False)
+            fig_dur.update_layout(yaxis=dict(title="seconds"))
             st.plotly_chart(fig_dur, use_container_width=True)
 
 st.markdown("---")
