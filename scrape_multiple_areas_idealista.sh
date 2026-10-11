@@ -7,7 +7,7 @@ PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python"
 OUTPUT_DIR="results/latest/batch_idealista"
 
 # Search parameters
-CITY="milano"
+CITY="bologna"
 OPERATION="affitto"
 PROPERTY_TYPES="appartamenti"
 MIN_PRICE=700
@@ -23,16 +23,15 @@ VPN_ROTATE_BATCHES=3   # rotate VPN every N batches
 
 # List of areas to scrape (add or remove as needed)
 AREAS=(
-  "bicocca"
-  "niguarda"
-  "precotto"
-  "loreto"
-  "citta-studi"
-  "lambrate"
-  "turro"
-  "greco-segnano"
-  "crescenzago"
-  "centrale"
+  "san-vitale-massarenti"
+  "san-donato-fiera"
+  "pilastro"
+  "roveri"
+  "murri"
+  "mazzini-fossolo"
+  "savena"
+  "san-ruffillo-zona-toscana"
+  "zona-colli"
 )
 
 # Create output directory if it doesn't exist

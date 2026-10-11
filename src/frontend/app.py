@@ -14,13 +14,14 @@ st.set_page_config(
 
 # Check missing environment variables
 required_envs = [
-    "OPENROUTER_API_KEY",
     "NOTION_API_KEY",
     "NOTION_APARTMENTS_DB_ID",
     "NOTION_AREAS_DB_ID",
     "NOTION_AGENCIES_DB_ID"
 ]
 missing_envs = [var for var in required_envs if not os.environ.get(var)]
+if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENROUTER_API_KEY")):
+    missing_envs.insert(0, "ANTHROPIC_API_KEY (or OPENROUTER_API_KEY)")
 
 if missing_envs:
     st.warning(

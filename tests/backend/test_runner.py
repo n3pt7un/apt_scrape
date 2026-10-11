@@ -45,7 +45,6 @@ def test_run_config_job_creates_job_record():
         patch("backend.runner.browser") as mock_browser,
         patch("backend.runner.get_adapter_with_overrides") as mock_get_adapter,
         patch("backend.runner.enrich_with_details", new_callable=AsyncMock) as mock_enrich,
-        patch("backend.runner.enrich_post_dates", new_callable=AsyncMock) as mock_post_dates,
     ):
         mock_browser.fetch_page = AsyncMock(return_value=fake_html)
         mock_adapter = MagicMock()
@@ -54,7 +53,6 @@ def test_run_config_job_creates_job_record():
         mock_adapter.config.search_wait_selector = None
         mock_get_adapter.return_value = mock_adapter
         mock_enrich.return_value = (1, [])
-        mock_post_dates.return_value = (0, [])
 
         job_id = asyncio.run(backend_runner_run(config_id, logs.append))
 
@@ -74,7 +72,6 @@ def test_log_persists_on_mid_job_exception():
         patch("backend.runner.browser") as mock_browser,
         patch("backend.runner.get_adapter_with_overrides") as mock_get_adapter,
         patch("backend.runner.enrich_with_details", new_callable=AsyncMock),
-        patch("backend.runner.enrich_post_dates", new_callable=AsyncMock),
     ):
         mock_browser.fetch_page = AsyncMock(side_effect=asyncio.CancelledError("simulated cancel"))
         mock_adapter = MagicMock()
@@ -100,3 +97,41 @@ def test_log_persists_on_mid_job_exception():
         assert job is not None
         assert job.log is not None and len(job.log) > 0
         assert "Fetching" in job.log  # pre-exception log line must be persisted
+
+
+def test_log_flushes_to_db_after_interval(monkeypatch):
+    """With the time-based flush, lines reach the DB before the 10-line batch fills up."""
+    monkeypatch.setattr(backend_runner_module, "LOG_FLUSH_INTERVAL_SEC", 0.0)
+    config_id = _make_config()
+    with Session(engine) as s:  # no politeness delay needed against a fake browser
+        cfg = s.get(SearchConfig, config_id)
+        cfg.request_delay_sec = 0.0
+        s.add(cfg)
+        s.commit()
+    persisted_at_fetch: list[str] = []
+
+    async def fake_fetch(url, **kwargs):
+        with Session(engine) as s:
+            from sqlmodel import select as sql_select
+            job = s.exec(sql_select(Job).where(Job.config_id == config_id)).all()[-1]
+            persisted_at_fetch.append(job.log)
+        return "<html></html>"
+
+    with (
+        patch("backend.runner.browser") as mock_browser,
+        patch("backend.runner.get_adapter_with_overrides") as mock_get_adapter,
+        patch("backend.runner.enrich_with_details", new_callable=AsyncMock),
+    ):
+        mock_browser.fetch_page = fake_fetch
+        mock_adapter = MagicMock()
+        mock_adapter.build_search_url.return_value = "https://example.com/search"
+        mock_adapter.parse_search.return_value = [_make_fake_listing()]
+        mock_adapter.config.search_wait_selector = None
+        mock_get_adapter.return_value = mock_adapter
+
+        asyncio.run(backend_runner_run(config_id, lambda msg: None))
+
+    # Each "Fetching ... page N" line is already in the DB when that page is fetched
+    assert len(persisted_at_fetch) == 2
+    assert "page 1" in persisted_at_fetch[0]
+    assert "page 2" in persisted_at_fetch[1]

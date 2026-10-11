@@ -19,7 +19,7 @@ def config_dialog(edit_data=None):
         _raw = edit_data
         defaults = {
             "name": _raw.get("name", ""),
-            "city": _raw.get("city", "milano"),
+            "city": _raw.get("city", "bologna"),
             "area": _raw.get("area") or "",
             "operation": _raw.get("operation", "affitto"),
             "property_type": _raw.get("property_type", "appartamenti"),
@@ -43,7 +43,7 @@ def config_dialog(edit_data=None):
     else:
         defaults = {
             "name": "",
-            "city": "milano",
+            "city": "bologna",
             "area": "",
             "operation": "affitto",
             "property_type": "appartamenti,attici",
@@ -69,7 +69,7 @@ def config_dialog(edit_data=None):
         st.markdown("**Basics**")
         c1, c2 = st.columns(2)
         with c1:
-            name = st.text_input("Config name", value=defaults["name"], key=f"{key_suffix}_name", placeholder="Milano · Bicocca")
+            name = st.text_input("Config name", value=defaults["name"], key=f"{key_suffix}_name", placeholder="Bologna · Cirenaica")
             _sites = site_ids or ["immobiliare", "casa", "idealista"]
             _site_index = _sites.index(defaults["site_id"]) if defaults["site_id"] in _sites else 0
             site_id = st.selectbox("Site", _sites, index=_site_index, key=f"{key_suffix}_site_id")
@@ -138,7 +138,7 @@ def config_dialog(edit_data=None):
         time_str = schedule_time.strftime("%H:%M") if schedule_time else "08:00"
         payload = {
             "name": name or "Unnamed",
-            "city": city or "milano",
+            "city": city or "bologna",
             "area": area or None,
             "operation": operation,
             "property_type": property_type or "appartamenti",

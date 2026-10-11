@@ -10,6 +10,8 @@ services:
     environment:
       - PYTHONPATH=/workspace/src
       - DB_PATH=/data/app.db
+      # WAL's shared-memory file is unreliable on Docker Desktop bind mounts
+      - SQLITE_JOURNAL_MODE=DELETE
       - PREFERENCES_FILE=/data/preferences.txt
     network_mode: host
     restart: unless-stopped

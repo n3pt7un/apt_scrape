@@ -7,11 +7,11 @@ domain_pattern: 'idealista\.it'
 search_path_template: "/{operation}-{property_type}/{city}/"
 
 # City slug for city-wide searches (no area).
-# Idealista changed the city-level URL to use "milano-milano" while area-specific
-# searches still use plain "milano" followed by the neighbourhood path.
-#   city-only:  /affitto-case/milano-milano/con-...
-#   with area:  /affitto-case/milano/comasina-bicocca/bicocca-bignami/con-...
-city_no_area: milano-milano
+# Idealista uses "{city}-{province}" for city-level URLs while area-specific
+# searches use the plain city slug followed by the zone path.
+#   city-only:  /affitto-case/bologna-bologna/con-...
+#   with area:  /affitto-case/bologna/san-vitale-massarenti/con-...
+city_no_area: bologna-bologna
 
 # Path-based filter mapping (used by custom build_search_url)
 path_filter_map:
@@ -36,19 +36,20 @@ sort_map:
   data: ultime-24-ore
   newest: ultime-24-ore
 
-# Area slug mapping: simple name → Idealista zone/neighborhood path
-# Format: {macro-zone}/{specific-neighborhood}  (all verified 2026-03-15)
+# Area slug mapping: simple name → Idealista zone path.
+# Bologna zones are a single level (no macro/micro split); verified 2026-10-04.
+# Other Bologna zones: centro, costa-saragozza, saffi, barca, santa-viola,
+# borgo-panigale-aeroporto, navile
 area_map:
-  bicocca: comasina-bicocca/bicocca-bignami
-  niguarda: comasina-bicocca/niguarda
-  precotto: greco-turro/precotto
-  loreto: greco-turro/nolo-brianza-pasteur
-  citta-studi: citta-studi-lambrate/citta-studi
-  lambrate: citta-studi-lambrate/lambrate
-  turro: greco-turro/turro
-  greco-segnano: greco-turro/greco
-  crescenzago: greco-turro/crescenzago
-  centrale: garibaldi-porta-venezia/centrale
+  san-vitale-massarenti: san-vitale-massarenti
+  san-donato-fiera: san-donato-fiera
+  pilastro: pilastro
+  roveri: roveri
+  murri: murri
+  mazzini-fossolo: mazzini-fossolo
+  savena: savena
+  san-ruffillo-zona-toscana: san-ruffillo-zona-toscana
+  zona-colli: zona-colli
 
 # Pagination: changed from pagina-{page}.htm to lista-{page}.htm
 page_param: pagina
@@ -108,14 +109,20 @@ detail_selectors:
     - "div.comment"
     - "[class*='comment']"
     - "[class*='description']"
+  # Idealista renders features as flat lists, not label/value pairs. Keys and
+  # values use the SAME selectors, which switches the parser to list mode
+  # ("Label: value" items become pairs, the rest go under "Caratteristiche").
+  # Scoped to the details container: a bare "ul li" also matched nav/footer.
   features_keys:
-    # Features are in a plain <ul> (no class). Use info-features for summary (sqm/rooms/floor).
-    # The full features UL has no distinguishing class; match via content-rich sibling lists.
-    - "[class*='info-features']"
-    - "ul li"
+    - "[class*='info-features'] > span"
+    - "div.details-property_features li"
+    - "[class*='details-property-feature'] li"
+    - "[class*='details-property'] li"
   features_values:
-    - "[class*='info-features']"
-    - "ul li"
+    - "[class*='info-features'] > span"
+    - "div.details-property_features li"
+    - "[class*='details-property-feature'] li"
+    - "[class*='details-property'] li"
   address:
     - "span.main-info__title-minor"
     - "[class*='main-info__title-minor']"

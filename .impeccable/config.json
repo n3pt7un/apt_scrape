@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "flat-type-hierarchy",
+        "value": "*",
+        "files": [
+          "tests/fixtures/immobiliare_detail_403.html"
+        ],
+        "createdAt": "2026-10-11T05:32:47.854Z",
+        "reason": "Claude: synthetic portal HTML fixture for parser tests, not a UI surface"
+      }
+    ]
+  }
+}

@@ -35,8 +35,8 @@ def test_get_site_areas():
     areas = resp.json()
     assert isinstance(areas, list)
     # When site has no overrides and no area_map in YAML, backend uses config/default_areas.txt
-    assert "bicocca" in areas
-    assert "centrale" in areas
+    assert "murri-massarenti" in areas
+    assert "san-vitale-mazzini" in areas
 
 
 def test_put_site_config():

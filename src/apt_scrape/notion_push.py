@@ -14,14 +14,18 @@ Required env vars:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
 import click
 import httpx
 from notion_client import AsyncClient
+
+from apt_scrape.sites.base import normalize_energy_class
 
 
 # ---------------------------------------------------------------------------
@@ -30,18 +34,16 @@ from notion_client import AsyncClient
 
 
 def _parse_price_numeric(price_str: str) -> Optional[float]:
-    """Extract the first numeric value from a price string (handles dots/commas as thousands sep)."""
+    """Extract the first numeric value from a price string (same rule as backend.parsing.parse_price).
+
+    A '.' or ',' between a digit and exactly three digits is a thousands separator
+    ('1.200', '1,200'); any other ',' is a decimal comma ('1.200,50').
+    """
     if not price_str:
         return None
-    # Remove thousands separators (. or ,) then find digits
-    cleaned = re.sub(r"[.,](?=\d{3})", "", price_str)
-    m = re.search(r"(\d+(?:[.,]\d+)?)", cleaned)
-    if not m:
-        return None
-    try:
-        return float(m.group(1).replace(",", "."))
-    except ValueError:
-        return None
+    cleaned = re.sub(r"(?<=\d)[.,](?=\d{3}(?!\d))", "", price_str).replace(",", ".")
+    m = re.search(r"\d+(?:\.\d+)?", cleaned)
+    return float(m.group(0)) if m else None
 
 
 def _parse_sqm_numeric(sqm_str: str) -> Optional[float]:
@@ -80,36 +82,58 @@ def _score_to_stars(score: int) -> str:
 
 
 _NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+# Nominatim's usage policy allows at most one request per second.
+_NOMINATIM_INTERVAL_SEC = 1.1
 _geocode_cache: dict[str, Optional[tuple[float, float]]] = {}
+_last_geocode_at = 0.0
+_geocode_lock = asyncio.Lock()
 
 
-async def _geocode_address(address: str) -> Optional[tuple[float, float]]:
+async def _geocode_address(
+    address: str, client: Optional[httpx.AsyncClient] = None
+) -> Optional[tuple[float, float]]:
     """Return (lat, lon) for *address* using Nominatim, or None on failure.
 
-    Results are cached in-process to avoid duplicate requests within a run.
+    Definitive answers (found / not found) are cached in-process; a network
+    error is not, so a later push can retry it. Requests are spaced by
+    ``_NOMINATIM_INTERVAL_SEC``. Pass *client* to reuse one connection pool.
     """
+    global _last_geocode_at
     if not address:
         return None
     if address in _geocode_cache:
         return _geocode_cache[address]
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                _NOMINATIM_URL,
-                params={"q": address, "format": "json", "limit": 1},
-                headers={"User-Agent": "apt_scrape/1.0 (apartment hunter)"},
-                timeout=10.0,
-            )
-            data = resp.json()
-            if data:
-                result: Optional[tuple[float, float]] = (float(data[0]["lat"]), float(data[0]["lon"]))
+    async with _geocode_lock:
+        wait = _NOMINATIM_INTERVAL_SEC - (time.monotonic() - _last_geocode_at)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _last_geocode_at = time.monotonic()
+        try:
+            if client is None:
+                async with httpx.AsyncClient() as own_client:
+                    resp = await _nominatim_get(own_client, address)
             else:
-                result = None
-    except Exception as exc:
-        click.echo(f"  [warn] Geocoding failed for '{address}': {exc}", err=True)
-        result = None
+                resp = await _nominatim_get(client, address)
+            data = resp.json()
+        except Exception as exc:
+            click.echo(f"  [warn] Geocoding failed for '{address}': {exc}", err=True)
+            return None
+    result: Optional[tuple[float, float]] = (
+        (float(data[0]["lat"]), float(data[0]["lon"])) if data else None
+    )
     _geocode_cache[address] = result
     return result
+
+
+async def _nominatim_get(client: httpx.AsyncClient, address: str) -> httpx.Response:
+    resp = await client.get(
+        _NOMINATIM_URL,
+        params={"q": address, "format": "json", "limit": 1},
+        headers={"User-Agent": "apt_scrape/1.0 (apartment hunter)"},
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +227,18 @@ async def _is_duplicate(client: AsyncClient, apartments_db_id: str, listing_url:
     return None
 
 
+# URLs that mark_notion_duplicates found absent from Notion -> monotonic check
+# time. push_listings trusts a recent negative check instead of querying the
+# same URL again. Bounded by the TTL; an entry is dropped once the URL is pushed.
+_DUP_CHECK_TTL_SEC = 3600.0
+_recent_negative_checks: dict[str, float] = {}
+
+
+def _recently_checked(url: str) -> bool:
+    checked_at = _recent_negative_checks.get(url)
+    return checked_at is not None and time.monotonic() - checked_at < _DUP_CHECK_TTL_SEC
+
+
 # ---------------------------------------------------------------------------
 # Property builder
 # ---------------------------------------------------------------------------
@@ -231,9 +267,11 @@ def _build_properties(
     rooms = fields.get("rooms") or listing.get("rooms", "")
     source = listing.get("source", "")
     _raw_energy = fields.get("energy_class") or listing.get("detail_energy_class", "") or ""
-    # Only use the value if it looks like a valid energy class (A–G, optionally A1–A4)
-    _energy_match = re.search(r'\b([A-Ga-g][1-4]?)\b', _raw_energy)
-    energy = _energy_match.group(1).upper() if _energy_match else ""
+    # Only use the value if it is a real class (A–G, A1–A4, A+); pending statuses
+    # and free text ("E' in fase di rilascio") are not a select option.
+    energy = normalize_energy_class(_raw_energy)
+    if not re.fullmatch(r"[A-G](?:[1-4]|\+{1,3})?", energy):
+        energy = ""
     furnished: Optional[bool] = fields.get("furnished")
     available_from: Optional[str] = fields.get("available_from")
     notes_extra: Optional[str] = fields.get("notes")
@@ -311,6 +349,10 @@ async def mark_notion_duplicates(listings: list[dict]) -> int:
         return 0
 
     skipped = 0
+    now = time.monotonic()
+    for url, checked_at in list(_recent_negative_checks.items()):
+        if now - checked_at >= _DUP_CHECK_TTL_SEC:
+            del _recent_negative_checks[url]
     async with AsyncClient(auth=api_key) as client:
         # Minimal check, not doing full schema or caching areas
         for listing in listings:
@@ -325,6 +367,8 @@ async def mark_notion_duplicates(listings: list[dict]) -> int:
                 listing["notion_page_id"] = existing_id
                 listing["notion_page_url"] = f"https://www.notion.so/{existing_id.replace('-', '')}"
                 skipped += 1
+            else:
+                _recent_negative_checks[url] = time.monotonic()
     return skipped
 
 
@@ -332,7 +376,9 @@ async def push_listings(listings: list[dict]) -> None:
     """Create Notion Apartments pages for each listing in-place.
 
     Adds notion_page_id, notion_page_url, notion_skipped to each listing dict.
-    Reads DB IDs from env vars. Deduplicates by Listing URL.
+    Reads DB IDs from env vars. Deduplicates by Listing URL, reusing a recent
+    ``mark_notion_duplicates`` check instead of querying the URL twice.
+    Geocodes with the listing's own ``lat``/``lon`` when present.
     """
     api_key = os.environ.get("NOTION_API_KEY", "")
     apartments_db_id = os.environ.get("NOTION_APARTMENTS_DB_ID", "")
@@ -342,7 +388,7 @@ async def push_listings(listings: list[dict]) -> None:
     area_cache: dict[str, Optional[str]] = {}
     agency_cache: dict[str, Optional[str]] = {}
 
-    async with AsyncClient(auth=api_key) as client:
+    async with AsyncClient(auth=api_key) as client, httpx.AsyncClient() as http:
         await _ensure_schema(client, apartments_db_id)
 
         created = skipped = 0
@@ -352,7 +398,9 @@ async def push_listings(listings: list[dict]) -> None:
                 continue
 
             url = listing.get("url", "")
-            existing_id = await _is_duplicate(client, apartments_db_id, url)
+            existing_id = None
+            if not _recently_checked(url):
+                existing_id = await _is_duplicate(client, apartments_db_id, url)
 
             if existing_id:
                 listing["notion_skipped"] = True
@@ -373,14 +421,19 @@ async def push_listings(listings: list[dict]) -> None:
                     client, agencies_db_id, agency_name, agency_cache
                 )
 
-            # Geocode address for Place (map view)
-            fields: dict = listing.get("notion_fields") or {}
-            address_for_geocode = (
-                fields.get("address")
-                or listing.get("detail_address")
-                or listing.get("address", "")
-            )
-            lat_lon = await _geocode_address(address_for_geocode)
+            # Geocode address for Place (map view); reuse coordinates the
+            # backend already resolved.
+            lat_lon: Optional[tuple[float, float]] = None
+            if listing.get("lat") is not None and listing.get("lon") is not None:
+                lat_lon = (float(listing["lat"]), float(listing["lon"]))
+            else:
+                fields: dict = listing.get("notion_fields") or {}
+                address_for_geocode = (
+                    fields.get("address")
+                    or listing.get("detail_address")
+                    or listing.get("address", "")
+                )
+                lat_lon = await _geocode_address(address_for_geocode, client=http)
 
             props = _build_properties(listing, area_page_id, agency_page_id, lat_lon)
             page = await client.pages.create(
@@ -390,6 +443,7 @@ async def push_listings(listings: list[dict]) -> None:
             listing["notion_page_id"] = page["id"]
             listing["notion_page_url"] = page.get("url", "")
             listing["notion_skipped"] = False
+            _recent_negative_checks.pop(url, None)
             created += 1
 
         click.echo(f"Notion push: {created} created, {skipped} skipped.", err=True)

@@ -6,19 +6,17 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 # Fallback when GET /sites/{id}/areas fails; per-site to match shell scripts
 DEFAULT_AREAS = [
-    "bicocca", "niguarda", "precotto", "porta-venezia-indipendenza", "citta-studi",
-    "lambrate", "turro", "greco-segnano", "crescenzago", "centrale", "pasteur-rovereto",
+    "san-donato-pilastro", "san-vitale-mazzini", "murri-massarenti", "toscana-savena", "zona-colli",
 ]
 # Per-site defaults (match config/default_areas_{site}.txt and scrape_multiple_areas_*.sh)
 DEFAULT_AREAS_BY_SITE = {
-    "immobiliare": DEFAULT_AREAS,  # full list + pasteur-rovereto
+    "immobiliare": DEFAULT_AREAS,
     "casa": [
-        "bicocca", "niguarda", "precotto", "citta-studi", "lambrate",
-        "turro", "greco-segnano", "crescenzago", "centrale",
+        "massarenti-san-vitale", "san-donato-pilastro", "murri", "savena-fossolo-mazzini", "colli",
     ],
     "idealista": [
-        "bicocca", "niguarda", "precotto", "loreto", "citta-studi",
-        "lambrate", "turro", "greco-segnano", "crescenzago", "centrale",
+        "san-vitale-massarenti", "san-donato-fiera", "pilastro", "roveri", "murri",
+        "mazzini-fossolo", "savena", "san-ruffillo-zona-toscana", "zona-colli",
     ],
 }
 

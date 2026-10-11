@@ -18,13 +18,55 @@ from .base import (
     SiteConfig,
     Tag,
     classify_feature,
+    energy_class_from_features,
+    extract_agency,
     extract_attr,
+    extract_block_text,
     extract_post_date_text,
     extract_text,
     load_config_from_yaml,
+    normalize_energy_class,
 )
 
 _CONFIG_PATH = Path(__file__).parent / "configs" / "immobiliare.yaml"
+
+# Energy class written in the description ("APE: G", "classe energetica E").
+_DESCRIPTION_ENERGY_RE = re.compile(r"(?i:\b(?:APE|classe\s+energetica))\s*[:“\"']?\s*([A-G][1-4]?)\b")
+
+
+def _full_res_photo(src: str) -> str:
+    """Rewrite an im-cdn size variant (``m-c.jpg``, ``cover-m-c.jpg``, ``xxs-c.jpg``...) to ``r.jpg``."""
+    if "im-cdn.it/image/" in src:
+        return re.sub(r"/[a-z-]+\.jpg$", "/r.jpg", src)
+    return src
+
+
+def _dd_text(dd: Tag) -> str:
+    """Value of a ``<dd>``; a ``<dd>`` made only of chip elements is comma-joined."""
+    chips = [extract_text(c) for c in dd.find_all(["li", "span"], recursive=False)]
+    chips = [c for c in chips if c]
+    own_text = "".join(dd.find_all(string=True, recursive=False)).strip()
+    if len(chips) > 1 and not own_text:
+        return ", ".join(chips)
+    return extract_text(dd)
+
+
+def _other_features(soup) -> str:
+    """Return the "Altre caratteristiche" chips (cantina, fibra ottica, ...) comma-joined."""
+    items: list[str] = []
+    for label in soup.find_all(string=re.compile(r"^\s*Altre caratteristiche\s*$", re.IGNORECASE)):
+        heading = label.parent
+        container = heading.find_next_sibling() if heading is not None else None
+        if container is None:
+            continue
+        leaves = container.select("li") or [
+            el for el in container.find_all(["span", "div"]) if not el.find(["span", "div"])
+        ]
+        for leaf in leaves:
+            text = extract_text(leaf)
+            if text and text not in items:
+                items.append(text)
+    return ", ".join(items)
 
 
 class ImmobiliareAdapter(SiteAdapter):
@@ -69,18 +111,13 @@ class ImmobiliareAdapter(SiteAdapter):
         qmap = self.config.query_param_map
         query: dict = {}
 
-        if filters.min_price is not None and "min_price" in qmap:
-            query[qmap["min_price"]] = filters.min_price
-        if filters.max_price is not None and "max_price" in qmap:
-            query[qmap["max_price"]] = filters.max_price
-        if filters.min_sqm is not None and "min_sqm" in qmap:
-            query[qmap["min_sqm"]] = filters.min_sqm
-        if filters.max_sqm is not None and "max_sqm" in qmap:
-            query[qmap["max_sqm"]] = filters.max_sqm
-        if filters.min_rooms is not None and "min_rooms" in qmap:
-            query[qmap["min_rooms"]] = filters.min_rooms
-        if filters.max_rooms is not None and "max_rooms" in qmap:
-            query[qmap["max_rooms"]] = filters.max_rooms
+        # A 0 bound means "no filter". Immobiliare redirects URLs carrying e.g.
+        # superficieMinima=0 to the canonical URL and drops ``pag`` on the way,
+        # so every page would silently become page 1.
+        for field in ("min_price", "max_price", "min_sqm", "max_sqm", "min_rooms", "max_rooms"):
+            value = getattr(filters, field)
+            if value and field in qmap:
+                query[qmap[field]] = value
         if filters.published_within and "published_within" in qmap:
             query[qmap["published_within"]] = filters.published_within
 
@@ -98,6 +135,15 @@ class ImmobiliareAdapter(SiteAdapter):
         if query:
             url += "?" + urlencode(query)
         return url
+
+    def parse_search(self, html: str) -> list[ListingSummary]:
+        """Parse search results, keeping only cards that link to a listing.
+
+        The broad ``li.nd-list__item`` fallback selector also matches navigation
+        and footer list items; those resolve to non-listing URLs (home page,
+        filter links, ``/info/...``) and are dropped here.
+        """
+        return [ls for ls in super().parse_search(html) if "/annunci/" in ls.url]
 
     def _parse_one_card(self, card: Tag, sels: SearchSelectors) -> ListingSummary:
         """Parse a single Immobiliare search result card.
@@ -179,10 +225,14 @@ class ImmobiliareAdapter(SiteAdapter):
           crossed-out original price.
         - **size / floor**: Promoted to dedicated top-level fields from
           ``extra_info``.
-        - **photos**: Rewrites thumbnail URLs to full-resolution (replacing
-          ``/m-c.jpg`` and ``/s-c.jpg`` suffixes with ``/r.jpg``).
+        - **photos**: Rewrites every im-cdn size variant (``m-c.jpg``,
+          ``cover-m-c.jpg``, ``xxs-c.jpg``, ...) to full-resolution ``r.jpg``.
         - **costs**: Extracts only the financial extras ``<dl>`` (the one
           preceded by a sibling containing "costi" or "prezzo").
+        - **extra_info**: Merges every other ``<dl>`` (main facts, energy
+          section, ...) plus the "Altre caratteristiche" chips.
+        - **energy_class**: Selector text, else the features, else an "APE: X"
+          mention in the description.
 
         Args:
             html: Raw HTML of the Immobiliare listing detail page.
@@ -226,17 +276,35 @@ class ImmobiliareAdapter(SiteAdapter):
         if not price:
             price = extract_text(self.config.detail_selectors.price.find(soup))
 
-        description = extract_text(self.config.detail_selectors.description.find(soup))
+        description = extract_block_text(self.config.detail_selectors.description.find(soup))
 
-        # Main features <dl> (first one = core property facts).
+        # Costs: only the <dl> preceded by a sibling mentioning "costi" or "prezzo".
+        costs: dict[str, str] = {}
+        cost_dls: set[int] = set()
+        for dl in soup.select("dl"):
+            prev = dl.find_previous_sibling()
+            prev_txt = (prev.get_text(strip=True) if prev else "").lower()
+            if "costi" in prev_txt or "prezzo" in prev_txt:
+                cost_dls.add(id(dl))
+                for dt, dd in zip(dl.select("dt"), dl.select("dd")):
+                    k = extract_text(dt)
+                    if k:
+                        costs[k] = extract_text(dd)
+
+        # Features: every other <dl> (core facts first, then e.g. the energy
+        # section). The first section wins when a label repeats.
         extra_info: dict[str, str] = {}
-        first_dl = soup.select_one("dl[class*='FeaturesGrid']") or soup.select_one("dl")
-        if first_dl:
-            for dt, dd in zip(first_dl.select("dt"), first_dl.select("dd")):
-                k = dt.get_text(strip=True)
-                v = dd.get_text(strip=True)
+        for dl in soup.select("dl"):
+            if id(dl) in cost_dls:
+                continue
+            for dt, dd in zip(dl.select("dt"), dl.select("dd")):
+                k = extract_text(dt)
                 if k:
-                    extra_info[k] = v
+                    extra_info.setdefault(k, _dd_text(dd))
+        if "Altre caratteristiche" not in extra_info:
+            other = _other_features(soup)
+            if other:
+                extra_info["Altre caratteristiche"] = other
 
         # Promote size and floor to top-level fields.
         size_raw = extra_info.get("Superficie", "")
@@ -249,31 +317,26 @@ class ImmobiliareAdapter(SiteAdapter):
         for img in soup.select("[class*='ListingPhotos'] img"):
             src = img.get("src") or img.get("data-src", "")
             if src:
-                src = re.sub(r"/m-c\.jpg$", "/r.jpg", src)
-                src = re.sub(r"/s-c\.jpg$", "/r.jpg", src)
+                src = _full_res_photo(src)
                 if src not in photos:
                     photos.append(src)
         if not photos:
             for img in self.config.detail_selectors.photos.find_all(soup):
                 src = extract_attr(img, "data-src") or extract_attr(img, "src")
-                if src and src not in photos:
-                    photos.append(src)
+                if src:
+                    src = _full_res_photo(src)
+                    if src not in photos:
+                        photos.append(src)
 
-        energy_class = extract_text(self.config.detail_selectors.energy_class.find(soup))
-        agency = extract_text(self.config.detail_selectors.agency.find(soup))
+        energy_class = (
+            normalize_energy_class(extract_text(self.config.detail_selectors.energy_class.find(soup)))
+            or energy_class_from_features(extra_info)
+        )
+        if not energy_class:
+            m = _DESCRIPTION_ENERGY_RE.search(description)
+            energy_class = m.group(1) if m else ""
+        agency = extract_agency(self.config.detail_selectors.agency.find(soup))
         post_date = extract_post_date_text(soup.get_text(" ", strip=True))
-
-        # Costs: only the <dl> preceded by a sibling mentioning "costi" or "prezzo".
-        costs: dict[str, str] = {}
-        for dl in soup.select("dl"):
-            prev = dl.find_previous_sibling()
-            prev_txt = (prev.get_text(strip=True) if prev else "").lower()
-            if "costi" in prev_txt or "prezzo" in prev_txt:
-                for dt, dd in zip(dl.select("dt"), dl.select("dd")):
-                    k = dt.get_text(strip=True)
-                    v = dd.get_text(strip=True)
-                    if k:
-                        costs[k] = v
 
         return ListingDetail(
             source=self.config.display_name,

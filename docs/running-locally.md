@@ -23,7 +23,7 @@ Ensure the data directory exists:
 
 ```bash
 mkdir -p data
-touch data/preferences.txt
+touch preferences.txt   # AI criteria, read from the repo root
 ```
 
 ### Option B: conda
@@ -63,14 +63,14 @@ Start the backend in one terminal:
 ```bash
 export PYTHONPATH=src
 export DB_PATH=data/app.db
-export PREFERENCES_FILE=data/preferences.txt
+export PREFERENCES_FILE=preferences.txt
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Start the frontend in a second terminal (with backend already running):
 
 ```bash
-export BACKEND_URL=http://127.0.0.1:8000
+export BACKEND_URL=http://localhost:8000
 streamlit run src/frontend/app.py --server.port 8501 --server.address 0.0.0.0
 ```
 
@@ -127,7 +127,7 @@ If you see a browser 404 for `Search_Configs/_stcore/host-config`:
   `uv sync --extra backend`
   (pip: `pip install -e ".[backend]"`)
 - **"No module named 'backend'"** — Run from repo root with `PYTHONPATH=.` set.
-- **DB or preferences errors** — Set `DB_PATH` and `PREFERENCES_FILE` to writable paths (e.g. `data/app.db` and `data/preferences.txt`) and ensure `data/` exists.
+- **DB or preferences errors** — Set `DB_PATH` and `PREFERENCES_FILE` to writable paths (e.g. `data/app.db` and `preferences.txt`) and ensure `data/` exists.
 
 ---
 
@@ -138,11 +138,15 @@ Copy `.env.example` to `.env` and fill in values. All are optional unless marked
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DB_PATH` | no | `data/app.db` | SQLite database path |
-| `PREFERENCES_FILE` | no | `preferences.txt` (repo root) | Used for AI scoring. `apt` CLI defaults to repo root |
-| `BACKEND_URL` | no | `http://127.0.0.1:8000` | URL the frontend uses to reach the backend |
-| `OPENROUTER_API_KEY` | for AI scoring | — | OpenRouter API key |
-| `OPENROUTER_MODEL` | no | `google/gemini-2.0-flash-lite` | Model slug passed to OpenRouter |
-| `ANALYSIS_CONCURRENCY` | no | `5` | Max parallel AI scoring calls |
+| `SQLITE_JOURNAL_MODE` | no | `WAL` | SQLite journal mode; `DELETE` or `TRUNCATE` where WAL's shared-memory file is unreliable (Docker bind mounts) |
+| `PREFERENCES_FILE` | no | `preferences.txt` (repo root) | Plain-text criteria for AI scoring and the Criteri page |
+| `BACKEND_URL` | no | `http://localhost:8000` | URL Streamlit and the Vite dev proxy use to reach the backend |
+| `ANTHROPIC_API_KEY` | for AI scoring (either this or `OPENROUTER_API_KEY`) | — | Anthropic API key; takes precedence over OpenRouter |
+| `ANTHROPIC_MODEL` | no | `claude-sonnet-5-5` | Anthropic model ID |
+| `OPENROUTER_API_KEY` | for AI scoring (if no Anthropic key) | — | OpenRouter API key |
+| `OPENROUTER_MODEL` | no | `google/gemini-3.1-flash-lite-preview` | Model slug passed to OpenRouter |
+| `ANALYSIS_EFFORT` | no | `low` | Scoring reasoning effort: `low`, `medium` or `high` |
+| `ANALYSIS_CONCURRENCY` | no | `5` | Max parallel AI scoring calls (runs and bulk rescores; a single-listing rescore does not wait for them) |
 | `NOTION_API_KEY` | for Notion push | — | Notion integration token |
 | `NOTION_APARTMENTS_DB_ID` | for Notion push | — | Notion database ID for apartment listings |
 | `NOTION_AREAS_DB_ID` | for Notion push | — | Notion database ID for areas |
@@ -152,12 +156,14 @@ Copy `.env.example` to `.env` and fill in values. All are optional unless marked
 | `NORDVPN_SERVERS` | for proxy rotation | — | Comma-separated SOCKS5 hostnames |
 | `PROXY_ROTATE_EVERY` | no | `15` | Requests before rotating proxy |
 
+See the README's Environment Variables table for the remaining scraper and path variables. Without `NORDVPN_*`, blocked (captcha) pages are still detected and reported as `detail_status: blocked`; they are retried on the next run.
+
 ---
 
 ## AI Scoring Setup
 
-1. Set `OPENROUTER_API_KEY` in `.env`
-2. Optionally set `OPENROUTER_MODEL` (default: `google/gemini-2.0-flash-lite`)
+1. Set `ANTHROPIC_API_KEY` (or `OPENROUTER_API_KEY`) in `.env`
+2. Optionally set `ANTHROPIC_MODEL` (default: `claude-sonnet-5-5`) or `OPENROUTER_MODEL` (default: `google/gemini-3.1-flash-lite-preview`)
 3. Edit `preferences.txt` in the repo root — plain text, one preference per line, e.g.:
    ```
    I want at least 2 bedrooms

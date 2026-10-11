@@ -79,13 +79,13 @@ def test_listing_url_unique():
         session.refresh(job)
 
         from backend.db import Listing
-        l1 = Listing(url="https://example.com/1", job_id=job.id, config_id=cfg.id,
+        l1 = Listing(url="https://example.com/db-unique", job_id=job.id, config_id=cfg.id,
                      title="Test", raw_json="{}")
         session.add(l1)
         session.commit()
 
         # Second listing with same URL should raise an IntegrityError
-        l2 = Listing(url="https://example.com/1", job_id=job.id, config_id=cfg.id,
+        l2 = Listing(url="https://example.com/db-unique", job_id=job.id, config_id=cfg.id,
                      title="Duplicate", raw_json="{}")
         session.add(l2)
         with pytest.raises(Exception):  # IntegrityError (UNIQUE constraint)

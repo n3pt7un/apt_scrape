@@ -7,7 +7,7 @@ PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python"
 OUTPUT_DIR="results/latest/batch_casa"
 
 # Search parameters (mirrors scrape_multiple_areas.sh)
-CITY="milano"
+CITY="bologna"
 OPERATION="affitto"
 PROPERTY_TYPES="appartamenti,attici"
 MIN_PRICE=700
@@ -23,15 +23,11 @@ VPN_ROTATE_BATCHES=3   # rotate VPN every N batches
 
 # List of areas to scrape (same as main multi-area script; edit as needed)
 AREAS=(
-  "bicocca"
-  "niguarda"       # maps to bicocca-ca-granda-parco-nord zone on casa.it
-  "precotto"       # maps to gorla-greco-precotto zone
-  "citta-studi"    # maps to citta-studi-corsica-susa zone
-  "lambrate"
-  "turro"          # maps to gorla-greco-precotto zone (same as precotto)
-  "greco-segnano"  # maps to gorla-greco-precotto zone (same as precotto/turro)
-  "crescenzago"    # maps to adriano-crescenzago-parco-lambro-cimiano zone
-  "centrale"       # maps to centrale-repubblica zone
+  "massarenti-san-vitale"   # Massarenti, San Vitale-Roveri zone on casa.it
+  "san-donato-pilastro"
+  "murri"
+  "savena-fossolo-mazzini"  # Due Madonne-Savena, San Ruffillo-Monte Donato, Fossolo, Mazzini zone
+  "colli"
 )
 
 # Create output directory if it doesn't exist

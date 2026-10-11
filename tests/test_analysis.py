@@ -178,3 +178,64 @@ def test_load_preferences_missing_file_raises():
 
     with pytest.raises(FileNotFoundError):
         load_preferences("/nonexistent/path/preferences.txt")
+
+
+def test_make_llm_prefers_anthropic_when_keyed(monkeypatch):
+    """_make_llm() uses ChatAnthropic when ANTHROPIC_API_KEY is set."""
+    from langchain_anthropic import ChatAnthropic
+
+    from apt_scrape.analysis import _make_llm
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "fake")
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("ANALYSIS_EFFORT", raising=False)
+
+    llm = _make_llm()
+    assert isinstance(llm, ChatAnthropic)
+    assert llm.model == "claude-sonnet-5-5"
+    assert llm.max_tokens == 16000  # room for adaptive thinking (C4)
+    # Sonnet 5.5 supports effort; ANALYSIS_EFFORT defaults to low
+    assert llm.reasoning_effort == "low"
+
+
+def test_make_llm_skips_effort_on_haiku(monkeypatch):
+    """Haiku 4.5 rejects output_config.effort, so _make_llm() must not send it."""
+    from apt_scrape.analysis import _make_llm
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+    monkeypatch.setenv("ANALYSIS_EFFORT", "low")
+
+    llm = _make_llm()
+    assert llm.reasoning_effort is None
+
+
+def test_make_llm_sets_effort_on_supported_anthropic_model(monkeypatch):
+    """_make_llm() sends ANALYSIS_EFFORT to Anthropic models that support effort."""
+    from apt_scrape.analysis import _make_llm
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+    monkeypatch.setenv("ANALYSIS_EFFORT", "medium")
+
+    llm = _make_llm()
+    assert llm.max_tokens == 16000  # room for adaptive thinking (C4)
+    assert llm.reasoning_effort == "medium"
+
+
+def test_make_llm_falls_back_to_openrouter(monkeypatch):
+    """_make_llm() uses OpenRouter via ChatOpenAI when no Anthropic key is set."""
+    from langchain_openai import ChatOpenAI
+
+    from apt_scrape.analysis import _make_llm
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "fake")
+    monkeypatch.setenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-lite")
+    monkeypatch.delenv("ANALYSIS_EFFORT", raising=False)
+
+    llm = _make_llm()
+    assert isinstance(llm, ChatOpenAI)
+    assert llm.model_name == "google/gemini-2.0-flash-lite"
+    assert llm.extra_body == {"max_tokens": 16000, "reasoning": {"effort": "low"}}

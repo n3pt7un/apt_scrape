@@ -11,8 +11,10 @@ router = APIRouter()
 
 
 def _prefs_path() -> Path:
-    # Read env var at call time (not import time) so dotenv loading order doesn't matter
-    return Path(os.getenv("PREFERENCES_FILE", "data/preferences.txt"))
+    # Read env var at call time (not import time) so dotenv loading order doesn't matter.
+    # Same resolution as apt_scrape.analysis.load_preferences, so the Criteri page edits
+    # the file the scorer, rescore and chat actually read.
+    return Path(os.getenv("PREFERENCES_FILE") or "preferences.txt")
 
 
 @router.get("")

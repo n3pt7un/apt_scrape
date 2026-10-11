@@ -5,12 +5,12 @@ domain_pattern: 'casa\.it'
 
 # Casa.it uses a single search endpoint /srp/ with all params as query strings.
 # Location is identified by a zone hash in the `q=` parameter.
-# Old path-based URLs (/affitto/residenziale/milano/...) do NOT apply filters —
+# Old path-based URLs (/affitto/residenziale/bologna/...) do NOT apply filters —
 # only the /srp/ endpoint with proper params works for filtered searches.
 search_path_template: "/srp/"  # build_search_url in CasaAdapter overrides this fully
 
-# Hash for the entire Milano municipality (used when no area is specified).
-city_hash: "9f6485c2"
+# Hash for the entire Bologna municipality (used when no area is specified).
+city_hash: "01f0eef0"
 
 # Query parameter names (verified 2026-03-15 against /srp/ endpoint)
 query_param_map:
@@ -44,19 +44,16 @@ property_type_map:
   villette: villette
 
 # Area slug → Casa.it zone hash for the /srp/?q= parameter.
-# Hashes extracted 2026-03-15 from the zone picker on casa.it/srp/.
-# Multiple slugs can share the same hash when they fall in the same macro-zone.
+# Hashes extracted 2026-10-04 from the zone dropdown (`hkey`) on casa.it/affitto/residenziale/bologna/.
+# Other Bologna zones: centro-storico 12d65861, costa-saragozza 035cb1f0, saffi a02d857f,
+# barca-santa-viola 6f1d7247, borgo-panigale-aeroporto 9672cb12,
+# navile-lame-pescarola d80cd525, bolognina-corticella-arcoveggio-ippodromo eba0add4
 area_map:
-  bicocca: "85ba3e0b"        # Bicocca, Ca' Granda, Parco Nord
-  niguarda: "85ba3e0b"       # Niguarda is in the Bicocca/Ca' Granda/Parco Nord zone
-  precotto: "82c10d65"       # Gorla, Greco, Precotto
-  turro: "82c10d65"          # Turro also in Gorla/Greco/Precotto zone
-  greco-segnano: "82c10d65"  # Greco/Segnano also in same zone
-  loreto: "e4a6b323"         # Casoretto-NoLo (closest zone to Loreto/Via Padova)
-  citta-studi: "f5d3d07b"    # Città Studi, Corsica, Susa
-  lambrate: "3ef40a51"       # Lambrate
-  crescenzago: "ece08626"    # Adriano, Crescenzago, Parco Lambro-Cimiano
-  centrale: "9b4fa6fc"       # Centrale, Repubblica
+  massarenti-san-vitale: "853e62a4"    # Massarenti, San Vitale-Roveri
+  san-donato-pilastro: "f34c3a6d"      # San Donato, Pilastro
+  murri: "d2a360ef"                    # Murri
+  savena-fossolo-mazzini: "2fed3732"   # Due Madonne-Savena, San Ruffillo-Monte Donato, Fossolo, Mazzini
+  colli: "171c3cab"                    # Colli
 
 # Selectors are unchanged — the /srp/ page uses the same CSS classes as before.
 search_selectors:
@@ -93,12 +90,13 @@ detail_selectors:
     - "h1[class*='csapdp-infos__tit']"
   photos:
     - "img[src*='/listing/']"
-  energy_class:
-    - "[class*='chars_item'] [class*='chars__cnt']"
+  # No dedicated energy element: the class is read from the "Classe energetica"
+  # feature row (the old selector returned the first feature value of any kind).
+  energy_class: []
   agency:
     - "[class*='specific-form'] a[href*='/agenzie/']"
     - "[class*='specific-form__form'] p[class*='pb--ms']"
-  costs_keys:
-    - "[class*='chars_item'] [class*='chars__lbl']"
-  costs_values:
-    - "[class*='chars_item'] [class*='chars__cnt']"
+  # No dedicated costs section: costs are the cost-like feature rows
+  # (spese, condominio, cauzione, ...) picked in parse_detail.
+  costs_keys: []
+  costs_values: []

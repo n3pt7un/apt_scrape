@@ -13,13 +13,15 @@ buried in Python, so you can patch a broken selector without touching code.
 
 from __future__ import annotations
 
+import copy
 import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 from typing import Any
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 __all__ = [
     "ClassifyResult",
@@ -33,13 +35,17 @@ __all__ = [
     "SiteConfig",
     "Tag",
     "classify_feature",
+    "clean_agency_name",
     "config_from_dict",
     "config_to_dict",
     "deep_merge",
+    "extract_agency",
     "extract_attr",
+    "extract_block_text",
     "extract_post_date_text",
     "extract_text",
     "load_config_from_yaml",
+    "normalize_energy_class",
 ]
 
 logger = logging.getLogger(__name__)
@@ -333,7 +339,11 @@ class SiteConfig:
 
 
 def extract_text(element: Tag | None, default: str = "") -> str:
-    """Safely extract stripped text from a BeautifulSoup element.
+    """Safely extract single-line text from a BeautifulSoup element.
+
+    Text nodes are joined with a space (so ``<b>Bilocale</b>via X`` does not
+    glue into ``Bilocalevia X``) and whitespace is collapsed; the space an
+    inline tag boundary leaves before punctuation or a ``/unit`` is dropped.
 
     Args:
         element: A ``Tag`` or ``None``.
@@ -344,7 +354,139 @@ def extract_text(element: Tag | None, default: str = "") -> str:
     """
     if element is None:
         return default
-    return element.get_text(strip=True)
+    text = re.sub(r"\s+", " ", element.get_text(" ", strip=True))
+    return re.sub(r"\s+(?=[,.;:!?)]|/[^\s/])", "", text).strip()
+
+
+# Paragraph-like blocks end with a blank line; other blocks end their line.
+_PARAGRAPH_TAGS = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "ul", "ol"]
+_LINE_TAGS = ["div", "li", "section", "article", "header", "footer", "tr", "dt", "dd"]
+
+
+def extract_block_text(element: Tag | None, default: str = "") -> str:
+    """Extract multi-line text, keeping the paragraph and line breaks a browser shows.
+
+    ``<br>`` becomes a newline, every block element ends its line and
+    paragraphs are separated by a blank line, while inline tags (``<b>``,
+    ``<span>``) stay on their line. Source-code whitespace inside text is
+    collapsed like HTML rendering does, and runs of blank lines shrink to one.
+
+    Args:
+        element: A ``Tag`` or ``None``.
+        default: Value returned when *element* is ``None``.
+
+    Returns:
+        Text with ``\n`` line breaks, or *default*.
+    """
+    if element is None:
+        return default
+    el = copy.copy(element)
+    for text_node in el.find_all(string=True):
+        # Comments, scripts and CDATA are other NavigableString subclasses.
+        if type(text_node) is NavigableString:
+            text_node.replace_with(re.sub(r"\s+", " ", str(text_node)))
+    for br in el.find_all("br"):
+        br.replace_with("\n")
+    for block in el.find_all(_PARAGRAPH_TAGS):
+        block.insert_after("\n\n")
+    for block in el.find_all(_LINE_TAGS):
+        block.insert_after("\n")
+    lines = [line.strip() for line in el.get_text("").split("\n")]
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    return text or default
+
+
+# UI labels that agency boxes render next to the name (buttons, headings).
+_AGENCY_UI_SPLIT = re.compile(
+    r"\n|(?i:mostra\s+telefono|mostra\s+numero|invia\s+messaggio|contatta\s+l'agenzia|contatta)"
+)
+_AGENCY_UI_LINES = {"agenzia", "agente", "inserzionista", "referente", "chiama", "scrivi"}
+
+
+def clean_agency_name(text: str) -> str:
+    """Return the agency name from a scraped agency block.
+
+    Drops UI labels ("Agenzia", "Mostra Telefono", ...) and repeated names,
+    including in older scrapes where they were glued into one string, e.g.
+    ``"AgenziaBologna ImmobiliareMostra Telefono"`` -> ``"Bologna Immobiliare"``.
+
+    Args:
+        text: Raw agency text; lines may be separated by ``\n``.
+
+    Returns:
+        The first remaining name, or ``""``.
+    """
+    names: list[str] = []
+    for part in _AGENCY_UI_SPLIT.split(text or ""):
+        part = re.sub(r"\s+", " ", part).strip(" -|·,")
+        # "Agenzia" glued to the name ("AgenziaBologna ...") is the box label.
+        part = re.sub(r"^Agenzia(?=[A-ZÀ-Ý])", "", part).strip()
+        if not part or part.lower() in _AGENCY_UI_LINES:
+            continue
+        if part.lower() not in (n.lower() for n in names):
+            names.append(part)
+    return names[0] if names else ""
+
+
+def extract_agency(element: Tag | None) -> str:
+    """Extract a clean agency name from an agency/contact box element."""
+    if element is None:
+        return ""
+    el = copy.copy(element)
+    for ui in el.select("button, a[role=button], [class*='phone' i]"):
+        ui.decompose()
+    return clean_agency_name(el.get_text("\n", strip=True))
+
+
+# Statuses portals show instead of a class; kept verbatim.
+_ENERGY_PENDING = ("attesa", "non classificabile", "esente", "in fase", "non soggett", "non indicat")
+_ENERGY_CLASS = r"[A-G](?:[1-4]|\+{1,3})?"
+
+
+def normalize_energy_class(text: str) -> str:
+    """Normalize scraped energy-class text.
+
+    Returns an uppercase class (``"A4"``, ``"B"``, ``"A+"``), a short pending
+    status verbatim (``"In attesa di certificazione"``), or ``""``. Only an
+    uppercase class letter counts when the value is free text, so the Italian
+    words "e"/"a" (or "A norma di legge") are not read as classes.
+    """
+    t = re.sub(r"\s+", " ", text or "").strip()
+    if not t:
+        return ""
+    if len(t) <= 60 and any(p in t.lower() for p in _ENERGY_PENDING):
+        return t
+    m = re.fullmatch(r"(?i:classe(?:\s+energetica)?\s*[:\-]?\s*)?([A-Ga-g](?:[1-4]|\+{1,3})?)", t)
+    if m:
+        return m.group(1).upper()
+    m = re.search(rf"(?i:classe(?:\s+energetica)?|\bape)\s*[:\-]?\s*({_ENERGY_CLASS})(?![\w+])", t)
+    if m:
+        return m.group(1)
+    # "G 175,00 kWh/m² anno" / "G (175 kWh)": a leading class then a number or separator.
+    m = re.match(rf"({_ENERGY_CLASS})(?=$|\s*[\d|(,\-–])", t)
+    return m.group(1) if m else ""
+
+
+def _energy_from_class_attr(element: Tag | None) -> str:
+    """Read a class encoded in a CSS class name (Idealista: ``icon-energy-c-8`` -> ``C``)."""
+    if element is None:
+        return ""
+    m = re.search(r"energy-([a-g])(?:[-_ ]|$)", " ".join(element.get("class", [])))
+    return m.group(1).upper() if m else ""
+
+
+_ENERGY_KEYS = {"classe energetica", "efficienza energetica", "classe energia",
+                "energy class", "classe energetica globale"}
+
+
+def energy_class_from_features(extra_info: dict[str, str]) -> str:
+    """Find the energy class among feature label/value pairs."""
+    for k, v in extra_info.items():
+        if k.lower().strip() in _ENERGY_KEYS or "energ" in k.lower():
+            energy = normalize_energy_class(v)
+            if energy:
+                return energy
+    return ""
 
 
 def extract_attr(element: Tag | None, attr: str, default: str = "") -> str:
@@ -385,40 +527,60 @@ def classify_feature(text: str) -> ClassifyResult | None:
     return None
 
 
-def extract_post_date_text(text: str) -> str:
-    """Extract a publication or update date string from arbitrary page text.
+def _today_rome() -> date:
+    """Today's date in Italy (the portals' timezone), falling back to local time."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("Europe/Rome")).date()
+    except Exception:
+        return date.today()
+
+
+def extract_post_date_text(text: str, allow_bare_relative: bool = False) -> str:
+    """Extract a publication or update date string from arbitrary text.
 
     Tries progressively less specific patterns; returns the first match.
+    Relative dates ("pubblicato oggi") are resolved to an absolute date at
+    scrape time, so a stored value never stays "oggi" forever.
 
     Args:
         text: Arbitrary text, typically from a card or full page.
+        allow_bare_relative: Also accept a lone "oggi"/"ieri". Only safe for a
+            short card feature string: in free text it matches phrases such
+            as "libero da oggi".
 
     Returns:
-        Matched date string (e.g. ``"pubblicato il 12/03/2025"``), or ``""``
-        if no date pattern is found.
+        Date string (e.g. ``"pubblicato il 12/03/2025"``,
+        ``"Annuncio aggiornato il 11/10/2026"``), or ``""`` if none is found.
     """
     if not text:
         return ""
 
-    patterns = [
-        re.compile(
-            r"((?:annuncio\s+)?(?:pubblicato|inserito|aggiornato)\s+(?:il\s+)?"
-            r"\d{1,2}/\d{1,2}/\d{2,4})",
-            flags=re.IGNORECASE,
-        ),
-        re.compile(
-            r"((?:annuncio\s+)?(?:pubblicato|inserito|aggiornato)\s+(?:oggi|ieri))",
-            flags=re.IGNORECASE,
-        ),
-        re.compile(r"\b(?:oggi|ieri)\b", flags=re.IGNORECASE),
-    ]
+    dated = re.search(
+        r"((?:annuncio\s+)?(?:pubblicato|inserito|aggiornato)\s+(?:il\s+)?"
+        r"\d{1,2}/\d{1,2}/\d{2,4})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if dated:
+        return re.sub(r"\s+", " ", dated.group(1)).strip()
 
-    for pattern in patterns:
-        match = pattern.search(text)
-        if match:
-            return re.sub(
-                r"\s+", " ", match.group(1) if match.groups() else match.group(0)
-            ).strip()
+    relative = re.search(
+        r"((?:annuncio\s+)?(?:pubblicato|inserito|aggiornato))\s+(oggi|ieri)\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if relative:
+        day = _today_rome() - timedelta(days=1 if relative.group(2).lower() == "ieri" else 0)
+        prefix = re.sub(r"\s+", " ", relative.group(1)).strip()
+        return f"{prefix} il {day:%d/%m/%Y}"
+
+    if allow_bare_relative:
+        bare = re.search(r"\b(oggi|ieri)\b", text, flags=re.IGNORECASE)
+        if bare:
+            day = _today_rome() - timedelta(days=1 if bare.group(1).lower() == "ieri" else 0)
+            return f"{day:%d/%m/%Y}"
 
     return ""
 
@@ -560,6 +722,33 @@ def load_config_from_yaml(path: str) -> SiteConfig:
     with open(path, encoding="utf-8") as fh:
         d = yaml.safe_load(fh)
     return config_from_dict(d)
+
+
+_COST_LABEL_RE = re.compile(r"spese|condomin|cauzione|deposito|canone|prezzo", re.IGNORECASE)
+
+
+def _features_from_list(elements: list[Tag]) -> dict[str, str]:
+    """Turn a flat feature list into label/value pairs.
+
+    ``"Spese condominiali: 50 €"`` becomes a pair; items without a colon
+    (``"Balcone"``, ``"2 bagni"``) are joined under ``"Caratteristiche"``.
+    """
+    extra_info: dict[str, str] = {}
+    items: list[str] = []
+    for el in elements:
+        text = extract_text(el)
+        if not text:
+            continue
+        if ":" in text:
+            key, value = (part.strip() for part in text.split(":", 1))
+            if key and value:
+                extra_info.setdefault(key, value)
+                continue
+        if text not in items:
+            items.append(text)
+    if items:
+        extra_info.setdefault("Caratteristiche", ", ".join(items))
+    return extra_info
 
 
 # ---------------------------------------------------------------------------
@@ -766,7 +955,9 @@ class SiteAdapter(ABC):
     ) -> str:
         """Extract the publication date from a search result card.
 
-        Checks feature texts first, then falls back to all card text.
+        Checks feature texts first (where a lone "oggi"/"ieri" is a date),
+        then falls back to all card text (which includes the description
+        snippet, so a bare "oggi" there is not trusted).
 
         Args:
             card: The card ``Tag`` element.
@@ -775,12 +966,11 @@ class SiteAdapter(ABC):
         Returns:
             Date string if found, otherwise ``""``.
         """
-        candidates = list(feature_texts) + [card.get_text(" ", strip=True)]
-        for candidate in candidates:
-            post_date = extract_post_date_text(candidate)
+        for feature in feature_texts:
+            post_date = extract_post_date_text(feature, allow_bare_relative=True)
             if post_date:
                 return post_date
-        return ""
+        return extract_post_date_text(card.get_text(" ", strip=True))
 
     def extract_post_date_from_detail_html(self, html: str) -> str:
         """Extract the publication date from a detail page's full text.
@@ -814,17 +1004,22 @@ class SiteAdapter(ABC):
 
         title = extract_text(sels.title.find(soup))
         price = extract_text(sels.price.find(soup))
-        description = extract_text(sels.description.find(soup))
+        description = extract_block_text(sels.description.find(soup))
         address = extract_text(sels.address.find(soup))
 
         keys_els = sels.features_keys.find_all(soup)
-        vals_els = sels.features_values.find_all(soup)
-        extra_info: dict[str, str] = {}
-        for k_el, v_el in zip(keys_els, vals_els):
-            k = extract_text(k_el)
-            v = extract_text(v_el)
-            if k:
-                extra_info[k] = v
+        if sels.features_keys.selectors == sels.features_values.selectors:
+            # Same selectors for keys and values: the site renders features as a
+            # flat list (Idealista), not label/value pairs.
+            extra_info = _features_from_list(keys_els)
+        else:
+            vals_els = sels.features_values.find_all(soup)
+            extra_info = {}
+            for k_el, v_el in zip(keys_els, vals_els):
+                k = extract_text(k_el)
+                v = extract_text(v_el)
+                if k:
+                    extra_info[k] = v
 
         photos: list[str] = []
         for img in sels.photos.find_all(soup):
@@ -834,24 +1029,16 @@ class SiteAdapter(ABC):
                     src = urljoin(self.config.base_url, src)
                 photos.append(src)
 
-        energy_class = extract_text(sels.energy_class.find(soup))
-        # If the CSS selector matched a broad container (garbled text), fall back to
-        # the features dict — Immobiliare.it usually exposes "Classe energetica: G"
-        # as a <dt>/<dd> pair, which is already parsed into extra_info above.
-        if energy_class and not re.fullmatch(r'[A-Ga-g][1-4]?', energy_class.strip()):
-            _match = re.search(r'\b([A-Ga-g][1-4]?)\b', energy_class)
-            energy_class = _match.group(1).upper() if _match else ""
-        if not energy_class:
-            _ENERGY_KEYS = {"classe energetica", "efficienza energetica", "classe energia",
-                            "energy class", "classe energetica globale"}
-            for k, v in extra_info.items():
-                if k.lower().strip() in _ENERGY_KEYS or "energe" in k.lower():
-                    _m = re.search(r'\b([A-Ga-g][1-4]?)\b', v)
-                    if _m:
-                        energy_class = _m.group(1).upper()
-                        break
-        agency = extract_text(sels.agency.find(soup))
-        post_date = self.extract_post_date_from_detail_html(html)
+        # The selector may match a broad container (garbled text) or encode the
+        # class in a CSS class name; fall back to the features' label/value pairs.
+        energy_el = sels.energy_class.find(soup)
+        energy_class = (
+            _energy_from_class_attr(energy_el)
+            or normalize_energy_class(extract_text(energy_el))
+            or energy_class_from_features(extra_info)
+        )
+        agency = extract_agency(sels.agency.find(soup))
+        post_date = extract_post_date_text(soup.get_text(" ", strip=True))
 
         cost_keys = sels.costs_keys.find_all(soup)
         cost_vals = sels.costs_values.find_all(soup)
@@ -861,6 +1048,9 @@ class SiteAdapter(ABC):
             v = extract_text(v_el)
             if k:
                 costs[k] = v
+        if not costs:
+            # No dedicated costs section (Casa.it): pick the cost-like features.
+            costs = {k: v for k, v in extra_info.items() if _COST_LABEL_RE.search(k)}
 
         return ListingDetail(
             source=self.config.display_name,

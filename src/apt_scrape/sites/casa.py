@@ -4,14 +4,14 @@ Config: ``apt_scrape/sites/configs/casa.yaml``
 
 Casa.it uses a single search endpoint ``/srp/`` with all filters as query
 parameters.  Location is encoded as a short hash in the ``q=`` parameter
-(e.g. ``q=85ba3e0b`` for the Bicocca zone).
+(e.g. ``q=853e62a4`` for the Massarenti, San Vitale-Roveri zone).
 
-The old path-based URL pattern ``/affitto/residenziale/milano/{zone}/``
+The old path-based URL pattern ``/affitto/residenziale/bologna/{zone}/``
 renders a page that **does not apply filters** — only the ``/srp/`` endpoint
 with the correct ``q=`` hash actually returns filtered results.
 
 Zone hashes are stored in the ``area_map`` config key.  A ``city_hash``
-key provides the city-wide fallback (Milano = ``9f6485c2``).
+key provides the city-wide fallback (Bologna = ``01f0eef0``).
 """
 
 from pathlib import Path
@@ -41,7 +41,7 @@ class CasaAdapter(SiteAdapter):
         # Maps our area slugs → Casa.it zone hashes (for the q= parameter).
         self.area_map: dict[str, str] = raw_config.get("area_map", {})
         # City-wide hash used when no area slug is provided.
-        self.city_hash: str = raw_config.get("city_hash", "9f6485c2")
+        self.city_hash: str = raw_config.get("city_hash", "01f0eef0")
 
     def build_search_url(self, filters: SearchFilters) -> str:
         """Build a Casa.it ``/srp/`` search URL with zone hash and filters.
@@ -50,7 +50,7 @@ class CasaAdapter(SiteAdapter):
         into the parameters expected by Casa.it's ``/srp/`` endpoint.
 
         Example output:
-            https://www.casa.it/srp/?tr=affitti&propertyTypeGroup=case&q=85ba3e0b&priceMin=700&priceMax=1400&mqMin=40&numRoomsMin=2&page=1
+            https://www.casa.it/srp/?tr=affitti&propertyTypeGroup=case&q=853e62a4&priceMin=700&priceMax=1400&mqMin=40&numRoomsMin=2&page=1
         """
         op = self.config.operation_map.get(filters.operation, filters.operation)
         pt = self.config.property_type_map.get(filters.property_type, "case")

@@ -42,6 +42,10 @@ results/
 
 # Docker platform data (SQLite DB, preferences, results)
 data/app.db
+# SQLite WAL side files (WAL is the default journal mode)
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
 data/preferences.txt
 data/results/
 
@@ -49,3 +53,24 @@ data/results/
 .superpowers/
 .pids/
 .logs/
+
+# React web app (src/web): keep its entry page despite the *.html rule above
+!src/web/index.html
+# Saved portal pages used as test fixtures
+!tests/**/*.html
+
+# Impeccable working files (screenshots, decision pages, critiques, caches)
+.impeccable/review/
+.impeccable/questions/
+.impeccable/critique/
+.impeccable/hook.cache.json
+.impeccable/config.local.json
+src/web/.impeccable/
+
+# Local agent / editor tool configs (machine-specific)
+.claude/
+.codex/
+.cursor/
+
+# Launch-video renders and their work dirs (frames, node_modules, demo db)
+brag-output/

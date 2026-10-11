@@ -1,4 +1,4 @@
-# 🏠 rent-fetch
+# 🏠 MilHouse
 
 Scrape and monitor Italian real estate listings. Plugin architecture — one config file per site.
 
@@ -16,7 +16,7 @@ Scrape and monitor Italian real estate listings. Plugin architecture — one con
 
 - **Scrape** Immobiliare.it, Casa.it, and Idealista.it with price, size, room, and location filters
 - **Schedule** recurring scrape jobs via a cron-style dashboard (powered by APScheduler)
-- **AI score** each listing against a plain-text preferences file using LangGraph + OpenRouter
+- **AI score** each listing against a plain-text preferences file using LangGraph + Anthropic (or OpenRouter)
 - **Push to Notion** with automatic duplicate detection across three databases (apartments, areas, agencies)
 - **MCP server** — expose scraping tools to Claude Desktop or any MCP-compatible client
 - **CLI** — run one-off searches, fetch detail pages, dump raw HTML for selector debugging
@@ -44,15 +44,39 @@ Scrape and monitor Italian real estate listings. Plugin architecture — one con
 ┌──────▼──────────────────────────────┐
 │  BrowserManager (Camoufox)          │
 │  Stealth Firefox, rate-limit,       │
+│  captcha/block detection,           │
 │  optional NordVPN SOCKS5 rotation   │
 └─────────────────────────────────────┘
 ```
 
 ---
 
-## Dashboard
+## Web app (React)
 
-The Streamlit dashboard (port 8501) has six pages:
+The main interface is **MilHouse**, a React app in `src/web` (Vite + TypeScript + Tailwind + shadcn/ui) in Italian. Every listing's AI match score sits on a ten-rung ladder modelled on the Italian APE energy label, and the AI speaks as Milhouse. AI scoring and chat default to Claude Sonnet 5.5 (`ANTHROPIC_MODEL`, `ANALYSIS_EFFORT=low`).
+
+| Section | What it does |
+|---|---|
+| **Annunci** | Feed of every listing ranked by match, with new ones flagged. Filter by search, ladder rung, triage state or text. The detail sheet shows price, size, €/m², the ladder with the AI's reason, listing data, and triage (preferito / contattato / scartato + note). Keys: `J`/`K` move, `P`/`C`/`X` triage, `O` opens the portal, `/` search, `⌘K` command palette |
+| **Chiedi a Milhouse** | Claude-style chat about one listing, streamed as events: what Milhouse is doing, his reasoning (with **Pensaci bene**, a higher-effort mode), then the answer. Answers come from the listing data and your criteria, and requirements are marked soddisfatto / non soddisfatto / non verificabile. The conversation is not saved |
+| **Mappa** | Listings on OpenStreetMap; pin size and colour follow the score. **Localizza** geocodes addresses with Nominatim (1 request/second) |
+| **Confronta** | Up to three listings side by side, with the best value marked on each row |
+| **Ricerche** | Create, edit, duplicate, pause and launch search configs |
+| **Run** | Live log over SSE, pipeline phases, counters and per-area stats; a toast and a system notification when a run ends |
+| **Criteri** | Edit `preferences.txt` and re-score existing listings |
+
+```bash
+cd src/web && npm install     # once
+apt start                     # backend :8000, Streamlit :8501, web :5173
+```
+
+Open **http://localhost:5173**. In development Vite proxies `/api` to the backend. For a single-process setup, run `npm run build` in `src/web`: FastAPI then serves `src/web/dist` at **http://localhost:8000** (override the location with `WEB_DIST_DIR`). The backend exposes every route under `/api/...` as well as at the root paths Streamlit uses.
+
+---
+
+## Dashboard (Streamlit)
+
+The original Streamlit dashboard (port 8501) still runs alongside. It has six pages:
 
 | | |
 |---|---|
@@ -83,10 +107,10 @@ uv run camoufox fetch             # downloads browser binary (~100 MB, one-time)
 cp .env.example .env              # fill in API keys (see Environment Variables)
 mkdir -p data && touch preferences.txt
 
-apt start                         # starts backend (port 8000) + frontend (port 8501)
+apt start                         # backend :8000, Streamlit :8501, React web app :5173
 ```
 
-Open **http://127.0.0.1:8501** — use the sidebar to navigate.
+Open **http://localhost:5173** for the React app (run `cd src/web && npm install` once first), or **http://127.0.0.1:8501** for the Streamlit dashboard.
 
 See [docs/running-locally.md](docs/running-locally.md) for conda and pip alternatives.
 
@@ -106,7 +130,8 @@ apt <command> [service]
 
 | Command | Description |
 |---------|-------------|
-| `apt start` | Start backend and frontend |
+| `apt start` | Start backend, Streamlit frontend and React web app |
+| `apt start web` | Start the React web app only (Vite, port 5173) |
 | `apt start backend` | Start backend only |
 | `apt start frontend` | Start frontend only |
 | `apt stop` | Stop all services |
@@ -130,8 +155,8 @@ Logs are written to `.logs/backend.log` and `.logs/frontend.log` in the repo roo
 
 ```bash
 scr-apt search \
-  --city milano \
-  --area niguarda \
+  --city bologna \
+  --area murri-massarenti \
   --operation affitto \
   --property-type appartamenti,attici \
   --min-price 500 --max-price 1200 \
@@ -143,7 +168,7 @@ scr-apt search \
 
 | Flag | Description |
 |------|-------------|
-| `--city` | City slug, e.g. `milano`, `roma` |
+| `--city` | City slug, e.g. `bologna`, `milano`, `roma` |
 | `--area` | Neighbourhood within the city |
 | `--operation` | `affitto` (rent) or `vendita` (sale) |
 | `--property-type` | e.g. `appartamenti`, `attici`, or comma-separated for OR |
@@ -197,7 +222,7 @@ Copy `mcp_config_example.json`, update `cwd` to your local path, and add it to y
 ```json
 {
   "mcpServers": {
-    "rent-fetch": {
+    "milhouse": {
       "command": "python",
       "args": ["-m", "apt_scrape.server"],
       "cwd": "/path/to/rent-fetch"
@@ -224,11 +249,15 @@ Copy `.env.example` to `.env` and fill in values. All variables are optional unl
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DB_PATH` | no | `data/app.db` | SQLite database path |
-| `PREFERENCES_FILE` | no | `preferences.txt` (repo root) | Plain-text file for AI scoring. `apt` defaults to repo root; shell scripts default to `data/preferences.txt` |
-| `BACKEND_URL` | no | `http://127.0.0.1:8000` | URL the frontend uses to reach the backend |
-| `OPENROUTER_API_KEY` | for AI scoring | — | OpenRouter API key |
-| `OPENROUTER_MODEL` | no | `google/gemini-2.0-flash-lite` (`.env.example`); code fallback: `google/gemini-3.1-flash-lite-preview` | Model slug passed to OpenRouter |
-| `ANALYSIS_CONCURRENCY` | no | `5` | Max parallel AI scoring calls |
+| `PREFERENCES_FILE` | no | `preferences.txt` (repo root) | Plain-text criteria for AI scoring; the **Criteri** page edits the same file |
+| `BACKEND_URL` | no | `http://localhost:8000` | URL Streamlit and the Vite dev proxy use to reach the backend |
+| `WEB_DIST_DIR` | no | `src/web/dist` | Built React app that FastAPI serves at `/` |
+| `ANTHROPIC_API_KEY` | for AI scoring (either this or `OPENROUTER_API_KEY`) | — | Anthropic API key; takes precedence over OpenRouter when set |
+| `ANTHROPIC_MODEL` | no | `claude-sonnet-5-5` | Anthropic model ID |
+| `OPENROUTER_API_KEY` | for AI scoring (if no Anthropic key) | — | OpenRouter API key |
+| `OPENROUTER_MODEL` | no | `google/gemini-3.1-flash-lite-preview` | Model slug passed to OpenRouter |
+| `ANALYSIS_EFFORT` | no | `low` | Scoring reasoning effort: `low`, `medium` or `high` (ignored by models without effort support) |
+| `ANALYSIS_CONCURRENCY` | no | `5` | Max parallel AI scoring calls (runs and bulk rescores; a single-listing rescore does not wait for them) |
 | `NOTION_API_KEY` | for Notion push | — | Notion integration token |
 | `NOTION_APARTMENTS_DB_ID` | for Notion push | — | Notion database ID for apartment listings |
 | `NOTION_AREAS_DB_ID` | for Notion push | — | Notion database ID for areas |
@@ -237,6 +266,11 @@ Copy `.env.example` to `.env` and fill in values. All variables are optional unl
 | `NORDVPN_PASS` | for proxy rotation | — | NordVPN service password |
 | `NORDVPN_SERVERS` | for proxy rotation | — | Comma-separated SOCKS5 hostnames, e.g. `socks-nl1.nordvpn.com,socks-us28.nordvpn.com` |
 | `PROXY_ROTATE_EVERY` | no | `15` | Requests before rotating to next proxy |
+| `DETAIL_CONCURRENCY` | no | `5` | Parallel detail-page fetches for the CLI and MCP server (scheduled runs use the search config's value) |
+| `VPN_ROTATE_EVERY_BATCHES` | no | `3` | Detail-fetch batches between VPN rotations for the CLI and MCP server |
+| `BROWSER_HEADLESS` | no | `true` | Set to `false` to watch the Camoufox window |
+| `BLOCK_ASSETS` | no | off | Set to `1` to skip image downloads (faster, but can look more bot-like to DataDome) |
+| `SQLITE_JOURNAL_MODE` | no | `WAL` | SQLite journal mode; use `DELETE` or `TRUNCATE` on Docker bind mounts |
 
 ---
 
@@ -252,8 +286,8 @@ chmod +x scrape_multiple_areas.sh
 Edit the variables at the top of the script:
 
 ```bash
-AREAS=("bicocca" "niguarda" "precotto")
-CITY="milano"
+AREAS=("san-donato-pilastro" "san-vitale-mazzini" "murri-massarenti")
+CITY="bologna"
 OPERATION="affitto"
 PROPERTY_TYPES="appartamenti,attici"
 MAX_PRICE=1200
@@ -422,8 +456,10 @@ SelectorGroup([
 
 ## Notes
 
-- **Rate limiting**: configurable per-site delay in Search Configs; default 2 s between requests
-- **Proxy rotation**: optional NordVPN SOCKS5 rotation — set `NORDVPN_*` vars in `.env`
+- **Rate limiting**: each search config's "Pausa tra richieste" (default 2 s) spaces every page load, search and detail pages alike; a site's `requests_per_minute` override can only make it slower
+- **One run at a time**: a search that is already running is not started twice (the API answers 409), and runs of different searches queue up because they share one browser. A scheduled run missed while the machine slept fires on wake if it is less than 6 h late. Jobs left `running` by a backend restart are marked failed at the next start
+- **Blocked pages**: every fetch is checked for anti-bot/captcha pages (DataDome), with or without a proxy. With `NORDVPN_*` set in `.env` the scraper first switches server and retries. If the page stays blocked, or there is no proxy, the listing keeps its search-page data, is marked `detail_status: blocked` (the listing sheet says so) and the next run retries it. After 3 blocks in a row a run stops fetching detail pages, and a blocked search page skips that area with a `[warn]` line instead of failing the run
+- **Incremental runs**: a re-run fetches a listing's detail page again only if it is new, its last read was not `ok` (`blocked`, `error`, `empty`) or its price changed, and re-scores only those listings plus any without a valid score. A failed fetch or scoring never overwrites good stored data. `scraped_at`/`job_id` mark the run that first found a listing, `last_seen_at`/`last_job_id` the latest run that saw it
 - **Selectors will break**: sites change HTML regularly. Use `dump` → fix selectors → re-test
 - **Camoufox binary**: `camoufox fetch` downloads ~100 MB on first run, cached after that
 - **Personal use**: be respectful of sites' servers and their terms of service

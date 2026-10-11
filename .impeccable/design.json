@@ -1,0 +1,690 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-04T16:59:18+00:00",
+  "title": "Design System: MilHouse",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Cool Paper",
+        "canonical": "#e9ebe6",
+        "tonalRamp": [
+          "#272a22",
+          "#464c3d",
+          "#666e58",
+          "#859074",
+          "#a3ab96",
+          "#c1c6b8",
+          "#dcdfd7",
+          "#f3f4f1"
+        ]
+      },
+      "sheet": {
+        "role": "neutral",
+        "displayName": "Sheet White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#262626",
+          "#454545",
+          "#636363",
+          "#828282",
+          "#a1a1a1",
+          "#bfbfbf",
+          "#dbdbdb",
+          "#f2f2f2"
+        ]
+      },
+      "sheet-2": {
+        "role": "neutral",
+        "displayName": "Second Sheet",
+        "canonical": "#f5f6f3",
+        "tonalRamp": [
+          "#282c21",
+          "#484f3b",
+          "#687255",
+          "#889470",
+          "#a5ae93",
+          "#c2c8b6",
+          "#dde0d6",
+          "#f3f4f0"
+        ]
+      },
+      "accent-wash": {
+        "role": "neutral",
+        "displayName": "Accent Wash",
+        "canonical": "#eceee8",
+        "tonalRamp": [
+          "#282c21",
+          "#484f3b",
+          "#687255",
+          "#88956f",
+          "#a5af92",
+          "#c2c9b6",
+          "#dde1d6",
+          "#f3f4f0"
+        ]
+      },
+      "ink": {
+        "role": "primary",
+        "displayName": "Certificate Ink",
+        "canonical": "#1d1d1b",
+        "tonalRamp": [
+          "#282825",
+          "#474742",
+          "#676760",
+          "#87877e",
+          "#a4a49d",
+          "#c2c2bd",
+          "#ddddda",
+          "#f3f3f2"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "#474843",
+        "tonalRamp": [
+          "#272825",
+          "#464742",
+          "#666760",
+          "#85877e",
+          "#a3a49d",
+          "#c1c2bd",
+          "#dcddda",
+          "#f3f3f2"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink 3",
+        "canonical": "#686a64",
+        "tonalRamp": [
+          "#272725",
+          "#464743",
+          "#646661",
+          "#83867e",
+          "#a2a39e",
+          "#c0c1bd",
+          "#dcdcda",
+          "#f2f3f2"
+        ]
+      },
+      "hair": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#d6d8d2",
+        "tonalRamp": [
+          "#272924",
+          "#464a40",
+          "#666b5c",
+          "#858b79",
+          "#a3a79a",
+          "#c1c4bb",
+          "#dcded9",
+          "#f3f3f1"
+        ]
+      },
+      "hair-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "#b9bcb4",
+        "tonalRamp": [
+          "#272824",
+          "#464941",
+          "#65695e",
+          "#84897b",
+          "#a2a69b",
+          "#c0c3bc",
+          "#dcddd9",
+          "#f2f3f2"
+        ]
+      },
+      "rail": {
+        "role": "neutral",
+        "displayName": "Rail Ink",
+        "canonical": "#1d1d1b",
+        "tonalRamp": [
+          "#282825",
+          "#474742",
+          "#676760",
+          "#87877e",
+          "#a4a49d",
+          "#c2c2bd",
+          "#ddddda",
+          "#f3f3f2"
+        ]
+      },
+      "rail-ink": {
+        "role": "neutral",
+        "displayName": "Rail Text",
+        "canonical": "#f3f3ef",
+        "tonalRamp": [
+          "#2c2c21",
+          "#4f4f3b",
+          "#727255",
+          "#949470",
+          "#aeae93",
+          "#c8c8b6",
+          "#e0e0d6",
+          "#f4f4f0"
+        ]
+      },
+      "rail-muted": {
+        "role": "neutral",
+        "displayName": "Rail Muted",
+        "canonical": "#a5a79f",
+        "tonalRamp": [
+          "#272825",
+          "#464842",
+          "#66685f",
+          "#85877d",
+          "#a3a59d",
+          "#c1c2bc",
+          "#dcddda",
+          "#f3f3f2"
+        ]
+      },
+      "rail-hover": {
+        "role": "neutral",
+        "displayName": "Rail Hover",
+        "canonical": "#2c2c29",
+        "tonalRamp": [
+          "#282825",
+          "#474742",
+          "#676760",
+          "#86867e",
+          "#a4a49d",
+          "#c2c2bd",
+          "#ddddda",
+          "#f3f3f2"
+        ]
+      },
+      "r-0": {
+        "role": "secondary",
+        "displayName": "Ladder rung 0 (score 90-100, class A4)",
+        "canonical": "#00703c",
+        "tonalRamp": [
+          "#004c29",
+          "#008a4a",
+          "#00c76b",
+          "#05ff8b",
+          "#42ffa7",
+          "#80ffc4",
+          "#b8ffde",
+          "#e5fff3"
+        ]
+      },
+      "r-1": {
+        "role": "secondary",
+        "displayName": "Ladder rung 1 (score 80-89, class A3)",
+        "canonical": "#138036",
+        "tonalRamp": [
+          "#0a431c",
+          "#127833",
+          "#1aad49",
+          "#25df61",
+          "#5be788",
+          "#90efae",
+          "#c1f6d2",
+          "#e9fcef"
+        ]
+      },
+      "r-2": {
+        "role": "secondary",
+        "displayName": "Ladder rung 2 (score 70-79, class A2)",
+        "canonical": "#4aa63a",
+        "tonalRamp": [
+          "#193914",
+          "#2d6624",
+          "#429334",
+          "#58be46",
+          "#81ce73",
+          "#aadea1",
+          "#cfedca",
+          "#eef8ec"
+        ]
+      },
+      "r-3": {
+        "role": "secondary",
+        "displayName": "Ladder rung 3 (score 60-69, class A1)",
+        "canonical": "#8dc63f",
+        "tonalRamp": [
+          "#293b12",
+          "#4b6a20",
+          "#6c992e",
+          "#8dc63e",
+          "#a9d46d",
+          "#c5e29d",
+          "#deefc8",
+          "#f3f9eb"
+        ]
+      },
+      "r-4": {
+        "role": "secondary",
+        "displayName": "Ladder rung 4 (score 50-59, class B)",
+        "canonical": "#c9da2b",
+        "tonalRamp": [
+          "#3c410b",
+          "#6c7514",
+          "#9ca91e",
+          "#c9da2a",
+          "#d6e35e",
+          "#e3ec92",
+          "#f0f4c2",
+          "#f9fbe9"
+        ]
+      },
+      "r-5": {
+        "role": "secondary",
+        "displayName": "Ladder rung 5 (score 40-49, class C)",
+        "canonical": "#ffe01b",
+        "tonalRamp": [
+          "#4c4200",
+          "#8a7700",
+          "#c7ac00",
+          "#ffdd05",
+          "#ffe542",
+          "#ffee80",
+          "#fff5b8",
+          "#fffce5"
+        ]
+      },
+      "r-6": {
+        "role": "secondary",
+        "displayName": "Ladder rung 6 (score 30-39, class D)",
+        "canonical": "#fbb315",
+        "tonalRamp": [
+          "#4b3401",
+          "#875e02",
+          "#c48703",
+          "#fbaf09",
+          "#fcc345",
+          "#fdd682",
+          "#fee8b9",
+          "#fff7e6"
+        ]
+      },
+      "r-7": {
+        "role": "secondary",
+        "displayName": "Ladder rung 7 (score 20-29, class E)",
+        "canonical": "#f28c1e",
+        "tonalRamp": [
+          "#482804",
+          "#824708",
+          "#bc670b",
+          "#f18613",
+          "#f5a44d",
+          "#f8c186",
+          "#fbdcbc",
+          "#fef3e7"
+        ]
+      },
+      "r-8": {
+        "role": "secondary",
+        "displayName": "Ladder rung 8 (score 10-19, class F)",
+        "canonical": "#e5561f",
+        "tonalRamp": [
+          "#451908",
+          "#7b2d0e",
+          "#b24015",
+          "#e5561f",
+          "#eb7f56",
+          "#f2a98d",
+          "#f8cfbf",
+          "#fceee8"
+        ]
+      },
+      "r-9": {
+        "role": "secondary",
+        "displayName": "Ladder rung 9 (score 0-9, class G)",
+        "canonical": "#cf1b22",
+        "tonalRamp": [
+          "#44090b",
+          "#7a1014",
+          "#b0171d",
+          "#e22229",
+          "#e9585e",
+          "#f08e92",
+          "#f7c0c2",
+          "#fce8e9"
+        ]
+      },
+      "nd": {
+        "role": "neutral",
+        "displayName": "Not Evaluated Grey",
+        "canonical": "#9a9c95",
+        "tonalRamp": [
+          "#272825",
+          "#464742",
+          "#656760",
+          "#84867e",
+          "#a2a49d",
+          "#c0c1bd",
+          "#dcddda",
+          "#f2f3f2"
+        ]
+      },
+      "mh": {
+        "role": "tertiary",
+        "displayName": "Milhouse Blue",
+        "canonical": "#9cbcf0",
+        "tonalRamp": [
+          "#0a2042",
+          "#123978",
+          "#1a52ad",
+          "#266cde",
+          "#5b90e6",
+          "#90b4ee",
+          "#c1d5f6",
+          "#e9f0fc"
+        ]
+      },
+      "mh-lens": {
+        "role": "tertiary",
+        "displayName": "Lens Wash",
+        "canonical": "#eef4ff",
+        "tonalRamp": [
+          "#001b4c",
+          "#00318a",
+          "#0046c7",
+          "#055dff",
+          "#4285ff",
+          "#80acff",
+          "#b8d1ff",
+          "#e5eeff"
+        ]
+      },
+      "mh-ink": {
+        "role": "tertiary",
+        "displayName": "Milhouse Ink",
+        "canonical": "#24406e",
+        "tonalRamp": [
+          "#13223a",
+          "#223c68",
+          "#315796",
+          "#4373c1",
+          "#7195d0",
+          "#9fb7e0",
+          "#c9d7ed",
+          "#ecf1f9"
+        ]
+      },
+      "destructive": {
+        "role": "neutral",
+        "displayName": "Destructive Red",
+        "canonical": "#b8161d",
+        "tonalRamp": [
+          "#44080b",
+          "#7b0f13",
+          "#b2151c",
+          "#e42028",
+          "#eb565d",
+          "#f18d91",
+          "#f7bfc2",
+          "#fce8e9"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Certificate headline numbers (price, size, rooms, price per m²), tabular."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles; the large score chevron."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Sheet and dialog titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base size; AI answers and long reading."
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "Working size: table rows, buttons, navigation, fields."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Addresses, metadata, small buttons."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase ink-3 labels: column heads, fact names, certificate section labels, the APE tag."
+      }
+    },
+    "shadows": [
+      {
+        "name": "float",
+        "value": "0 6px 24px -6px rgb(29 29 27 / 0.28), 0 1px 2px rgb(29 29 27 / 0.12)",
+        "purpose": "Only for layers floating over another layer (map popup, composer, scroll button, map legend, menus). Resting sheets are flat."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Signature easing: ladder pointer slide, glasses push, Milhouse line fade."
+      },
+      {
+        "name": "pointer-slide",
+        "value": "transform 220ms var(--ease-out-expo)",
+        "purpose": "The ladder pointer moving to the selected listing's rung."
+      },
+      {
+        "name": "state",
+        "value": "150-250ms on color, background-color, border-color, opacity",
+        "purpose": "Hover, press and filter state changes."
+      },
+      {
+        "name": "mh-push",
+        "value": "2.2s var(--ease-out-expo) infinite",
+        "purpose": "Milhouse pushes his glasses up while the AI works; paired with mh-glint (2.2s ease-in-out) across the lenses."
+      },
+      {
+        "name": "mh-line",
+        "value": "350ms var(--ease-out-expo)",
+        "purpose": "Rotating loader lines fade up 3px."
+      },
+      {
+        "name": "mh-breathe",
+        "value": "1.8s linear infinite",
+        "purpose": "Sweep across the \"ci pensa su\" label while reasoning."
+      },
+      {
+        "name": "mh-caret",
+        "value": "1s steps(1) infinite",
+        "purpose": "Milhouse-ink block caret at the end of a streaming answer."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "loops stop and travel is removed; colour/opacity state changes kept at 120ms; stamps and log lines fade only",
+        "purpose": "Fewer, gentler motion under prefers-reduced-motion: reduce; MotionConfig reducedMotion=\"user\" for shared-element motion."
+      },
+      {
+        "name": "ladder-print",
+        "value": "rungs wipe on 300ms, 24ms stagger; pointer drops 340ms + 42ms/rung after 170ms, ease-out-expo",
+        "purpose": "Signature: the certificate prints and the pointer finds the listing's rung."
+      },
+      {
+        "name": "ladder-rescore",
+        "value": "760ms cubic-bezier(0.65, 0, 0.35, 1), score counts across",
+        "purpose": "Same listing, new score: the pointer travels from the old rung."
+      },
+      {
+        "name": "stamp-in",
+        "value": "280ms ease-out-expo, scale 1.7 rotate -6deg to flat",
+        "purpose": "Triage stamp just pressed."
+      },
+      {
+        "name": "strike-draw",
+        "value": "background-size 0 to 100% over 340ms; row held 650ms before sinking",
+        "purpose": "Scartato drawn through the title in place."
+      },
+      {
+        "name": "shared-pointer",
+        "value": "220-240ms tween ease-out-expo",
+        "purpose": "Selected-row triangle, rail chevron tab, tab bar and triage underline travel between items."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "md",
+        "value": "768px",
+        "note": "Ink icon rail replaces phone header and six-tab bottom bar."
+      },
+      {
+        "name": "lg",
+        "value": "1024px",
+        "note": "Feed and certificate split side by side."
+      },
+      {
+        "name": "xl",
+        "value": "1280px",
+        "note": "Rail shows labels (208px); feed adds €/m² and rooms columns."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ink-filled action: Avvia run, Apri annuncio, confirmations.",
+      "html": "<button class=\"ds-btn-primary\">Avvia run</button>",
+      "css": ".ds-btn-primary { font-family: var(--font-sans, 'Titillium Web', ui-sans-serif, system-ui, sans-serif); display:inline-flex; align-items:center; height:36px; padding:0 16px; background: var(--ink, #1d1d1b); color:#fff; border:0; border-radius:2px; font-size:0.8125rem; font-weight:600; cursor:pointer; transition: background-color 150ms; } .ds-btn-primary:hover { background: rgb(29 29 27 / 0.85); } .ds-btn-primary:focus-visible { outline:2px solid var(--ink, #1d1d1b); outline-offset:2px; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action on a sheet; stroke turns ink on hover.",
+      "html": "<button class=\"ds-btn-outline\">Confronta</button>",
+      "css": ".ds-btn-outline { font-family: var(--font-sans, 'Titillium Web', ui-sans-serif, system-ui, sans-serif); display:inline-flex; align-items:center; height:36px; padding:0 16px; background: var(--sheet, #fff); color: var(--ink, #1d1d1b); border:1px solid var(--hair-strong, #b9bcb4); border-radius:2px; font-size:0.8125rem; font-weight:600; cursor:pointer; transition: border-color 150ms; } .ds-btn-outline:hover { border-color: var(--ink, #1d1d1b); } .ds-btn-outline:focus-visible { outline:2px solid var(--ink, #1d1d1b); outline-offset:2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": null,
+      "description": "Hairline field on a sheet, ink stroke on focus.",
+      "html": "<input class=\"ds-input\" placeholder=\"Cerca via, zona, titolo…\" />",
+      "css": ".ds-input { font-family: var(--font-sans, 'Titillium Web', ui-sans-serif, system-ui, sans-serif); height:36px; width:280px; padding:0 12px; background: var(--sheet, #fff); color: var(--ink, #1d1d1b); border:1px solid var(--hair-strong, #b9bcb4); border-radius:3px; font-size:0.8125rem; caret-color: var(--ink, #1d1d1b); outline:none; transition: border-color 150ms; } .ds-input::placeholder { color: var(--ink-3, #686a64); } .ds-input:focus-visible { border-color: var(--ink, #1d1d1b); }"
+    },
+    {
+      "name": "Score Chevron",
+      "kind": "chip",
+      "refersTo": "score-chevron",
+      "description": "A match score on its ladder rung; N.D. hatching when unscored.",
+      "html": "<span class=\"ds-chev\" style=\"background:var(--r-0, #00703c);color:#fff\">92</span> <span class=\"ds-chev\" style=\"background:var(--r-3, #8dc63f);color:var(--ink, #1d1d1b)\">64</span> <span class=\"ds-chev\" style=\"background:var(--r-9, #cf1b22);color:#fff\">7</span> <span class=\"ds-chev ds-hatch\">N.D.</span>",
+      "css": ".ds-chev { font-family: var(--font-sans, 'Titillium Web', ui-sans-serif, system-ui, sans-serif); clip-path: polygon(0 0, calc(100% - var(--tip, 0.5em)) 0, 100% 50%, calc(100% - var(--tip, 0.5em)) 100%, 0 100%); --tip:0.55rem; display:inline-flex; align-items:center; height:24px; min-width:48px; padding:0 14px 0 8px; font-size:0.8125rem; font-weight:700; font-variant-numeric: tabular-nums lining-nums; line-height:1; } .ds-hatch { color: var(--ink-3, #686a64); background-color:#eceee9; background-image: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--nd, #9a9c95) 55%, transparent) 3px 4px); }"
+    },
+    {
+      "name": "Run State Chevron",
+      "kind": "chip",
+      "refersTo": null,
+      "description": "Queued, running, completed (r-1), failed (r-9).",
+      "html": "<span class=\"ds-run\" style=\"border:1px solid var(--ink, #1d1d1b)\">In coda</span> <span class=\"ds-run\" style=\"background:var(--ink, #1d1d1b);color:#fff\"><i class=\"ds-dot\"></i>In corso</span> <span class=\"ds-run\" style=\"background:var(--r-1, #138036);color:#fff\">Completata</span> <span class=\"ds-run\" style=\"background:var(--r-9, #cf1b22);color:#fff\">Fallita</span>",
+      "css": ".ds-run { font-family: var(--font-sans, 'Titillium Web', ui-sans-serif, system-ui, sans-serif); clip-path: polygon(0 0, calc(100% - var(--tip, 0.5em)) 0, 100% 50%, calc(100% - var(--tip, 0.5em)) 100%, 0 100%); --tip:0.45rem; display:inline-flex; align-items:center; gap:6px; height:20px; padding:0 12px 0 6px; font-size:0.6875rem; font-weight:700; letter-spacing:0.025em; text-transform:uppercase; color: var(--ink, #1d1d1b); } .ds-dot { width:6px; height:6px; border-radius:50%; background: var(--r-3, #8dc63f); animation: ds-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; } @keyframes ds-pulse { 50% { opacity:0.5; } }"
+    },
+    {
+      "name": "Ladder",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "The full ten-rung APE label with the black pointer at the listing's rung (slides 220ms ease-out-expo).",
+      "html": "<div class=\"ds-ladder\"><ol class=\"ds-rungs\"><li class=\"ds-rung\" style=\"width:38.0%;background:var(--r-0, #00703c);color:#fff\">90–100</li><li class=\"ds-rung\" style=\"width:44.9%;background:var(--r-1, #138036);color:#fff\">80–89</li><li class=\"ds-rung\" style=\"width:51.8%;background:var(--r-2, #4aa63a);color:var(--ink, #1d1d1b)\">70–79</li><li class=\"ds-rung\" style=\"width:58.7%;background:var(--r-3, #8dc63f);color:var(--ink, #1d1d1b)\">60–69</li><li class=\"ds-rung\" style=\"width:65.6%;background:var(--r-4, #c9da2b);color:var(--ink, #1d1d1b)\">50–59</li><li class=\"ds-rung\" style=\"width:72.4%;background:var(--r-5, #ffe01b);color:var(--ink, #1d1d1b)\">40–49</li><li class=\"ds-rung\" style=\"width:79.3%;background:var(--r-6, #fbb315);color:var(--ink, #1d1d1b)\">30–39</li><li class=\"ds-rung\" style=\"width:86.2%;background:var(--r-7, #f28c1e);color:var(--ink, #1d1d1b)\">20–29</li><li class=\"ds-rung\" style=\"width:93.1%;background:var(--r-8, #e5561f);color:var(--ink, #1d1d1b)\">10–19</li><li class=\"ds-rung\" style=\"width:100.0%;background:var(--r-9, #cf1b22);color:#fff\">0–9</li></ol><div class=\"ds-ptr-col\"><span class=\"ds-ptr\" style=\"transform:translateY(46px)\">74</span></div></div>",
+      "css": ".ds-ladder { font-family: var(--font-sans, 'Titillium Web', ui-sans-serif, system-ui, sans-serif); display:grid; grid-template-columns: 1fr 4.25rem; width:320px; } .ds-rungs { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:3px; } .ds-rung { clip-path: polygon(0 0, calc(100% - var(--tip, 0.5em)) 0, 100% 50%, calc(100% - var(--tip, 0.5em)) 100%, 0 100%); --tip:0.6rem; height:20px; display:flex; align-items:center; padding-left:8px; font-size:0.6875rem; font-weight:600; font-variant-numeric: tabular-nums; } .ds-ptr-col { position:relative; } .ds-ptr { clip-path: polygon(var(--tip, 0.5em) 0, 100% 0, 100% 100%, var(--tip, 0.5em) 100%, 0 50%); --tip:0.7rem; position:absolute; left:0; right:0; top:-3px; height:26px; display:flex; align-items:center; justify-content:flex-end; padding-right:10px; background: var(--ink, #1d1d1b); color:#fff; font-weight:700; font-size:0.9375rem; font-variant-numeric: tabular-nums; transition: transform 220ms cubic-bezier(0.16,1,0.3,1); } .ds-ladder:hover .ds-ptr { transform: translateY(0) !important; }"
+    },
+    {
+      "name": "Ladder Filter",
+      "kind": "chip",
+      "refersTo": null,
+      "description": "The ladder as a control: notched chevron chain; rungs at or above the chosen floor stay full strength.",
+      "html": "<div class=\"ds-lf\" role=\"group\"><button class=\"ds-lf-rung\" style=\"z-index:20;background:var(--r-0, #00703c);color:#fff\" aria-pressed=\"true\">90</button><button class=\"ds-lf-rung\" style=\"z-index:19;background:var(--r-1, #138036);color:#fff\" aria-pressed=\"true\">80</button><button class=\"ds-lf-rung\" style=\"z-index:18;background:var(--r-2, #4aa63a);color:var(--ink, #1d1d1b)\" aria-pressed=\"true\">70</button><button class=\"ds-lf-rung\" style=\"z-index:17;background:var(--r-3, #8dc63f);color:var(--ink, #1d1d1b)\" aria-pressed=\"true\">60</button><button class=\"ds-lf-rung\" style=\"z-index:16;background:var(--r-4, #c9da2b);color:var(--ink, #1d1d1b)\" aria-pressed=\"true\">50</button><button class=\"ds-lf-rung\" style=\"z-index:15;background:color-mix(in srgb, var(--r-5, #ffe01b) 22%, #fff);color:var(--ink-2, #474843)\" aria-pressed=\"false\">40</button><button class=\"ds-lf-rung\" style=\"z-index:14;background:color-mix(in srgb, var(--r-6, #fbb315) 22%, #fff);color:var(--ink-2, #474843)\" aria-pressed=\"false\">30</button><button class=\"ds-lf-rung\" style=\"z-index:13;background:color-mix(in srgb, var(--r-7, #f28c1e) 22%, #fff);color:var(--ink-2, #474843)\" aria-pressed=\"false\">20</button><button class=\"ds-lf-rung\" style=\"z-index:12;background:color-mix(in srgb, var(--r-8, #e5561f) 22%, #fff);color:var(--ink-2, #474843)\" aria-pressed=\"false\">10</button><button class=\"ds-lf-rung\" style=\"z-index:11;background:color-mix(in srgb, var(--r-9, #cf1b22) 22%, #fff);color:var(--ink-2, #474843)\" aria-pressed=\"false\">0</button></div>",
+      "css": ".ds-lf { font-family: var(--font-sans, 'Titillium Web', ui-sans-serif, system-ui, sans-serif); display:flex; align-items:center; } .ds-lf-rung { --tip:6px; position:relative; margin-right:-5px; width:30px; height:28px; display:flex; align-items:center; justify-content:center; padding-left:6px; border:0; font-size:0.625rem; font-weight:700; font-variant-numeric: tabular-nums; cursor:pointer; clip-path: polygon(0 0, calc(100% - var(--tip)) 0, 100% 50%, calc(100% - var(--tip)) 100%, 0 100%, var(--tip) 50%); transition: background-color 150ms, color 150ms; } .ds-lf-rung:first-child { padding-left:0; clip-path: polygon(0 0, calc(100% - var(--tip)) 0, 100% 50%, calc(100% - var(--tip)) 100%, 0 100%); } .ds-lf-rung:focus-visible { outline:2px solid var(--ink, #1d1d1b); outline-offset:0; }"
+    },
+    {
+      "name": "Navigation Rail",
+      "kind": "nav",
+      "refersTo": "nav-rail",
+      "description": "Ink rail with the ladder-lens glasses mark; the active item is a white chevron tab pointing into the page.",
+      "html": "<nav class=\"ds-rail\"><div class=\"ds-rail-brand\"><svg viewBox=\"0 0 64 30\" width=\"28\" aria-hidden=\"true\"><defs><clipPath id=\"dsl\"><circle cx=\"16\" cy=\"16\" r=\"10.5\"/><circle cx=\"48\" cy=\"16\" r=\"10.5\"/></clipPath></defs><g clip-path=\"url(#dsl)\"><rect x=\"0\" y=\"0\" width=\"64\" height=\"11\" fill=\"var(--r-0, #00703c)\"/><rect x=\"0\" y=\"11\" width=\"64\" height=\"5\" fill=\"var(--r-3, #8dc63f)\"/><rect x=\"0\" y=\"16\" width=\"64\" height=\"5\" fill=\"var(--r-5, #ffe01b)\"/><rect x=\"0\" y=\"21\" width=\"64\" height=\"9\" fill=\"var(--r-9, #cf1b22)\"/></g><g fill=\"none\" stroke=\"var(--rail-ink, #f3f3ef)\" stroke-width=\"4.5\" stroke-linecap=\"round\"><circle cx=\"16\" cy=\"16\" r=\"10.5\"/><circle cx=\"48\" cy=\"16\" r=\"10.5\"/><path d=\"M26.5 13.5 Q32 9.5 37.5 13.5\"/><path d=\"M5.5 12 L1.5 9.5\"/><path d=\"M58.5 12 L62.5 9.5\"/></g></svg><span>MilHouse</span></div><a class=\"ds-rail-item ds-on\" href=\"#\">Annunci</a><a class=\"ds-rail-item\" href=\"#\">Mappa</a><a class=\"ds-rail-item\" href=\"#\">Ricerche</a><a class=\"ds-rail-item\" href=\"#\">Run</a></nav>",
+      "css": ".ds-rail { font-family: var(--font-sans, 'Titillium Web', ui-sans-serif, system-ui, sans-serif); display:flex; flex-direction:column; gap:2px; width:208px; padding:0 0 12px 12px; background: var(--rail, #1d1d1b); color: var(--rail-ink, #f3f3ef); } .ds-rail-brand { display:flex; align-items:center; gap:10px; height:56px; padding-left:4px; font-weight:700; } .ds-rail-item { display:flex; align-items:center; height:36px; padding:0 16px 0 12px; font-size:0.8125rem; font-weight:600; color: var(--rail-muted, #a5a79f); text-decoration:none; border-radius:2px 0 0 2px; transition: background-color 150ms, color 150ms; } .ds-rail-item:hover { background: var(--rail-hover, #2c2c29); color: var(--rail-ink, #f3f3ef); } .ds-rail-item.ds-on { --tip:0.6rem; clip-path: polygon(0 0, calc(100% - var(--tip, 0.5em)) 0, 100% 50%, calc(100% - var(--tip, 0.5em)) 100%, 0 100%); background: var(--sheet, #fff); color: var(--ink, #1d1d1b); border-radius:0; } .ds-rail-item:focus-visible { outline:2px solid var(--rail-ink, #f3f3ef); outline-offset:2px; }"
+    },
+    {
+      "name": "Milhouse Thinking",
+      "kind": "custom",
+      "refersTo": "milhouse-avatar",
+      "description": "The AI layer: blue avatar disc, mh-ink voice, a breathing \"ci pensa su\" label while reasoning.",
+      "html": "<div class=\"ds-mh\"><span class=\"ds-mh-av\"><svg viewBox=\"0 0 64 30\" width=\"20\" aria-hidden=\"true\"><g fill=\"var(--mh-lens, #eef4ff)\"><circle cx=\"16\" cy=\"16\" r=\"10.5\"/><circle cx=\"48\" cy=\"16\" r=\"10.5\"/></g><g fill=\"none\" stroke=\"#1d1d1b\" stroke-width=\"4.5\" stroke-linecap=\"round\"><circle cx=\"16\" cy=\"16\" r=\"10.5\"/><circle cx=\"48\" cy=\"16\" r=\"10.5\"/><path d=\"M26.5 13.5 Q32 9.5 37.5 13.5\"/></g></svg></span><div><p class=\"ds-mh-name\">Milhouse</p><p class=\"ds-mh-shimmer\">Milhouse ci pensa su…</p></div></div>",
+      "css": ".ds-mh { font-family: var(--font-sans, 'Titillium Web', ui-sans-serif, system-ui, sans-serif); display:flex; gap:12px; align-items:flex-start; } .ds-mh-av { width:28px; height:28px; border-radius:50%; background: var(--mh, #9cbcf0); display:inline-flex; align-items:center; justify-content:center; } .ds-mh-name { margin:0 0 4px; font-size:0.75rem; font-weight:700; color: var(--mh-ink, #24406e); } .ds-mh-shimmer { margin:0; font-size:0.8125rem; color: var(--mh-ink, #24406e); animation: ds-breathe 1.6s ease-in-out infinite; } @keyframes ds-breathe { 0%, 100% { opacity:1; } 50% { opacity:0.45; } } @media (prefers-reduced-motion: reduce) { .ds-mh-shimmer { animation:none; color: var(--mh-ink, #24406e); } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Ministerial Certificate",
+    "overview": "**Creative North Star: \"The Ministerial Certificate\"**\n\nEvery listing is read the way an Italian APE energy label is read: a fixed ten-rung ladder from deep green to red, a black pointer arrow showing where this one landed, the number printed beside it. The interface is the certificate around that ladder: white sheets laid on a cool paper ground, ink type, one-pixel hairlines, ruled tables, and an ink-black rail that frames the sheet like the binding of an official form. It is dense, factual and quiet, built for an owner who triages at a desk and on a phone.\n\nColour is not decoration here. The ladder is the only chromatic system for judgement, printed at full strength exactly as the real label prints it, and it always carries a score, an energy class or a run outcome. Everything else is ink on white. A second, much smaller layer sits on top: Milhouse, the AI, who wears thick round glasses and speaks in a pale blue that appears only where he speaks or works.\n\nMotion is functional and short, with two exceptions that carry the personality: the certificate printing its ladder while the pointer drops to the listing's rung, and Milhouse pushing his glasses up while he thinks.",
+    "keyCharacteristics": [
+      "One typeface (Titillium Web, 400/600/700) for everything; tabular lining figures wherever a number is compared.",
+      "Ten-rung ladder (r-0 to r-9) as the sole scoring colour, full strength, with legible labels on every rung.",
+      "Chevron silhouette (a bar ending in an arrow tip) for scores, energy classes and run states.",
+      "Black pointer arrow as the universal mark of selection.",
+      "N.D. rendered as grey diagonal hatching, never as a ladder colour.",
+      "Flat sheets, hairline rules, 2-3px corners.",
+      "Milhouse blue reserved for the AI's voice."
+    ],
+    "rules": [
+      {
+        "name": "The Ladder Is The Only Colour Rule",
+        "body": "A chromatic fill must carry a score band, an energy class or a run outcome. If it carries none of these, it is ink, sheet or paper.",
+        "section": "colors"
+      },
+      {
+        "name": "The Full Strength Rule",
+        "body": "Ladder rungs print at their full value. Tints of a rung appear only for the unselected rungs of the ladder filter (22% mixed into sheet), so that \"off\" stays readable as the same rung.",
+        "section": "colors"
+      },
+      {
+        "name": "The N.D. Is Not A Score Rule",
+        "body": "A listing the AI never scored, or failed to score, is grey diagonal hatching labelled N.D. It never borrows a ladder colour and never reads as a low score.",
+        "section": "colors"
+      },
+      {
+        "name": "The Milhouse Speaks Blue Rule",
+        "body": "Milhouse blue appears only where the AI is talking, reasoning or waiting to answer. It never marks navigation, selection, links or ordinary buttons.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Every number that is compared (prices, areas, scores, counts, durations) is set with tabular lining figures and its real unit.",
+        "section": "typography"
+      },
+      {
+        "name": "The Fixed Scale Rule",
+        "body": "Type sizes come from the fixed rem scale; there is no fluid display size. Weight 700 is for figures, scores and names; 600 for labels and controls.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Sheet Rule",
+        "body": "A sheet resting in the layout never casts a shadow. Only a layer floating over another layer does, and only in ink tint.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do give every score a ladder rung and every rung its own label colour (white on r-0, r-1, r-9; ink elsewhere).",
+      "Do mark selection with the black pointer: the ladder pointer, the row triangle, the white chevron tab on the rail.",
+      "Do set compared numbers in tabular figures with their units, and the certificate's headline numbers at the figure size.",
+      "Do render missing or failed AI scores as N.D. hatching, and keep discarded listings visible, struck through.",
+      "Do keep Milhouse blue for the AI's voice, and play the glasses gesture while the AI works.",
+      "Do keep sheets flat, ruled with hairlines, at 2-3px corners."
+    ],
+    "donts": [
+      "Don't use a ladder colour as decoration, branding, a link colour or a generic success/error colour outside run outcomes.",
+      "Don't fill N.D. with grey-green or any rung colour,.",
+      "Don't put Milhouse blue on navigation, selection or non-AI controls.",
+      "Don't introduce a second typeface or a fluid display size.",
+      "Don't add shadows to resting sheets or round corners beyond 6px.",
+      "Don't reproduce the Simpsons character's artwork; the glasses mark is the only reference."
+    ]
+  }
+}

@@ -1,5 +1,6 @@
 # Default areas for casa (scrape_multiple_areas_casa.sh)
 # Keep in sync with AREAS in scrape_multiple_areas_casa.sh
+# (casa.yaml area_map is used when present; this file is fallback)
 bicocca
 niguarda
 precotto

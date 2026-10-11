@@ -16,9 +16,9 @@ from pathlib import Path
 
 import click
 
-from apt_scrape.enrichment import enrich_post_dates, enrich_with_details
+from apt_scrape.enrichment import detail_page_budget, enrich_post_dates, enrich_with_details
 from apt_scrape.export import listings_to_csv, listings_to_markdown_table
-from apt_scrape.server import browser
+from apt_scrape.server import BlockedError, browser
 from apt_scrape.sites import (
     SearchFilters,
     adapter_for_url,
@@ -152,7 +152,10 @@ def cli() -> None:
     "--detail-limit",
     type=int,
     default=None,
-    help="Max number of detail pages to fetch (default: all).",
+    help=(
+        "Max number of detail pages to fetch, post-date lookups included "
+        "(default: all; 0 = none)."
+    ),
 )
 @click.option(
     "--detail-concurrency",
@@ -177,7 +180,11 @@ def cli() -> None:
     show_default=True,
     help="Row limit for the markdown table preview.",
 )
-@click.option("--analyse", is_flag=True, help="Score each listing with AI against preferences.txt.")
+@click.option(
+    "--analyse",
+    is_flag=True,
+    help="Score each listing with AI against preferences.txt (implies --include-details).",
+)
 @click.option("--push-notion", "push_notion", is_flag=True, help="Push listings to Notion Apartments DB.")
 @click.option("-o", "--output", default=None, type=click.Path(), help="Write output to file.")
 def search(
@@ -217,6 +224,11 @@ def search(
             f"Available: {', '.join(available_sites)}",
             param_hint="--source",
         )
+    if analyse and not include_details:
+        # Scoring on search-card data alone gives much weaker results than the
+        # backend runner, which always reads the detail pages.
+        click.echo("--analyse implies --include-details: fetching detail pages.", err=True)
+        include_details = True
 
     result = asyncio.run(
         _run_search(
@@ -315,9 +327,18 @@ async def _run_search(
                 search_urls.append(url)
                 click.echo(f"Fetching {pt} page {page_num}: {url}", err=True)
 
-                html = await browser.fetch_page(
-                    url, wait_selector=adapter.config.search_wait_selector
-                )
+                try:
+                    html = await browser.fetch_page(
+                        url,
+                        wait_selector=adapter.config.search_wait_selector,
+                        wait_until=adapter.config.page_load_wait,
+                        wait_selector_timeout=adapter.config.search_wait_timeout,
+                    )
+                except Exception as exc:
+                    # Keep what was collected; one failed page must not lose the run.
+                    label = "blocked by bot protection (captcha)" if isinstance(exc, BlockedError) else str(exc)
+                    click.echo(f"[warn] {pt} page {page_num}: {label} — stopping {pt}.", err=True)
+                    break
                 page_listings = adapter.parse_search(html)
 
                 if not page_listings:
@@ -370,12 +391,30 @@ async def _run_search(
                 concurrency=eff_concurrency,
                 rotate_every_batches=eff_rotate,
             )
+            kinds = [e.get("kind") for e in detail_errors]
+            click.echo(
+                f"Details: {detail_enriched} ok, {kinds.count('blocked')} blocked, "
+                f"{kinds.count('error')} error, {kinds.count('empty')} empty, "
+                f"{kinds.count('skipped')} skipped.",
+                err=True,
+            )
+            if kinds.count("blocked"):
+                click.echo(
+                    "[warn] Detail pages blocked by bot protection (captcha); "
+                    "configure NORDVPN_* proxies or retry later.",
+                    err=True,
+                )
 
-        post_date_enriched, post_date_errors = await enrich_post_dates(
-            deduped, browser, adapter,
-            concurrency=eff_concurrency,
-            rotate_every_batches=eff_rotate,
-        )
+        # The post-date pass skips listings the details pass already handled, and
+        # --detail-limit caps the detail-page fetches of both passes together.
+        post_date_limit = detail_page_budget(deduped, detail_limit)
+        if post_date_limit != 0:
+            post_date_enriched, post_date_errors = await enrich_post_dates(
+                deduped, browser, adapter,
+                concurrency=eff_concurrency,
+                rotate_every_batches=eff_rotate,
+                limit=post_date_limit,
+            )
 
         # Stamp area/city onto each listing for analysis and Notion push
         for listing in deduped:
@@ -507,7 +546,11 @@ async def _run_detail(url: str) -> str:
             )
 
         click.echo(f"Fetching: {url}", err=True)
-        html = await browser.fetch_page(url, wait_selector=adapter.config.detail_wait_selector)
+        html = await browser.fetch_page(
+            url,
+            wait_selector=adapter.config.detail_wait_selector,
+            wait_until=adapter.config.page_load_wait,
+        )
         return json.dumps(
             adapter.parse_detail(html, url).to_dict(), indent=2, ensure_ascii=False
         )
@@ -538,7 +581,8 @@ async def _run_dump(url: str, wait_selector: str | None) -> str:
     """Async implementation of the dump command."""
     try:
         click.echo(f"Fetching: {url}", err=True)
-        return await browser.fetch_page(url, wait_selector=wait_selector)
+        # A debug dump should show a block page rather than hide it behind an error.
+        return await browser.fetch_page(url, wait_selector=wait_selector, raise_on_block=False)
     finally:
         await browser.close()
 

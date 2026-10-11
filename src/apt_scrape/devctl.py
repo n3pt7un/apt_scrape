@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """apt_scrape.devctl — local dev CLI for apt_scrape.
 
+Services: backend (FastAPI :8000), frontend (Streamlit :8501), web (Vite dev server :5173).
+
 Commands:
-  start     Start backend and/or frontend
+  start     Start backend, frontend and/or web
   stop      Stop running processes
   status    Show what's running
   logs      Tail logs
@@ -12,6 +14,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -21,12 +24,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _find_bin(name: str) -> str:
-    """Find a binary on PATH, fall back to running via sys.executable -m."""
+    """Find a binary next to the running interpreter (the venv's bin/), then on PATH.
+
+    `.venv/bin/apt` runs without the venv being activated, so its uvicorn and
+    streamlit are not on PATH; they always sit beside sys.executable.
+    """
+    beside = Path(sys.executable).parent / name
+    if beside.exists():
+        return str(beside)
     found = shutil.which(name)
     return found if found else name  # let the shell error if missing
 
 PID_DIR = REPO_ROOT / ".pids"
 LOG_DIR = REPO_ROOT / ".logs"
+WEB_DIR = REPO_ROOT / "src" / "web"
 
 SERVICES = {
     "backend": {
@@ -55,7 +66,28 @@ SERVICES = {
         "cwd": str(REPO_ROOT / "src" / "frontend"),
         "url": "http://localhost:8501",
     },
+    "web": {
+        "cmd": lambda: [
+            _find_bin("npm"), "run", "dev", "--",
+            "--host", "0.0.0.0", "--port", "5173",
+        ],
+        "env": {},
+        "cwd": str(WEB_DIR),
+        "url": "http://localhost:5173",
+        # npm spawns vite as a child: run it in its own process group so stop kills both
+        "process_group": True,
+    },
 }
+
+SERVICE_CHOICES = ["all", *SERVICES]
+
+
+def _web_ready() -> bool:
+    """The Vite dev server needs its npm dependencies installed first."""
+    if (WEB_DIR / "node_modules").is_dir():
+        return True
+    click.echo(f"  web skipped: dependencies missing — run `cd {WEB_DIR.relative_to(REPO_ROOT)} && npm install`")
+    return False
 
 
 def _pid_file(name: str) -> Path:
@@ -94,6 +126,8 @@ def _start_service(name: str, verbose: bool = True) -> bool:
     if _is_running(name):
         click.echo(f"  {name} already running (pid {_read_pid(name)})")
         return False
+    if name == "web" and not _web_ready():
+        return False
 
     svc = SERVICES[name]
     env = {**os.environ, **svc["env"]}
@@ -106,6 +140,7 @@ def _start_service(name: str, verbose: bool = True) -> bool:
             env=env,
             stdout=logf,
             stderr=logf,
+            start_new_session=svc.get("process_group", False),
         )
 
     _pid_file(name).write_text(str(proc.pid))
@@ -120,7 +155,13 @@ def _stop_service(name: str) -> bool:
         click.echo(f"  {name} not running")
         return False
     try:
-        os.kill(pid, signal.SIGTERM)
+        if SERVICES[name].get("process_group"):
+            try:
+                os.killpg(pid, signal.SIGTERM)  # pid leads its own group (start_new_session)
+            except ProcessLookupError:
+                os.kill(pid, signal.SIGTERM)    # not a group leader: signal the process only
+        else:
+            os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         pass
     _pid_file(name).unlink(missing_ok=True)
@@ -136,10 +177,10 @@ def cli():
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
+@click.argument("service", default="all", type=click.Choice(SERVICE_CHOICES))
 @click.option("--wait", default=3, show_default=True, help="Seconds to wait before printing URLs.")
 def start(service: str, wait: int):
-    """Start backend, frontend, or both."""
+    """Start backend, frontend, web, or all of them."""
     names = list(SERVICES) if service == "all" else [service]
     click.echo(f"Starting {', '.join(names)}...")
     for name in names:
@@ -151,14 +192,19 @@ def start(service: str, wait: int):
     click.echo("")
     for name in names:
         url = SERVICES[name]["url"]
-        status = "🟢 running" if _is_running(name) else "🔴 failed to start"
+        if _is_running(name):
+            status = "🟢 running"
+        elif name == "web" and not (WEB_DIR / "node_modules").is_dir():
+            status = "⚪ skipped"
+        else:
+            status = "🔴 failed to start"
         click.echo(f"  {name:10s}  {status:20s}  {url}")
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
+@click.argument("service", default="all", type=click.Choice(SERVICE_CHOICES))
 def stop(service: str):
-    """Stop backend, frontend, or both."""
+    """Stop backend, frontend, web, or all of them."""
     names = list(SERVICES) if service == "all" else [service]
     click.echo(f"Stopping {', '.join(names)}...")
     for name in names:
@@ -166,9 +212,9 @@ def stop(service: str):
 
 
 @cli.command()
-@click.argument("service", default="all", type=click.Choice(["all", "backend", "frontend"]))
+@click.argument("service", default="all", type=click.Choice(SERVICE_CHOICES))
 def restart(service: str):
-    """Restart backend, frontend, or both."""
+    """Restart backend, frontend, web, or all of them."""
     names = list(SERVICES) if service == "all" else [service]
     click.echo(f"Restarting {', '.join(names)}...")
     for name in names:
@@ -192,7 +238,7 @@ def status():
 
 
 @cli.command()
-@click.argument("service", type=click.Choice(["backend", "frontend"]))
+@click.argument("service", type=click.Choice(list(SERVICES)))
 @click.option("-n", "--lines", default=50, show_default=True, help="Number of lines to show.")
 @click.option("-f", "--follow", "--stream", is_flag=True, help="Stream log output continuously (like tail -f).")
 def logs(service: str, lines: int, follow: bool):

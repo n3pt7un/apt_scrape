@@ -4,22 +4,31 @@ Thin server layer: defines MCP tools and delegates to site adapters.
 Each site (Immobiliare.it, Casa.it, …) is a self-contained plugin in
 ``apt_scrape/sites/``.
 
+Block detection runs on every fetch, with or without proxies: a bot-challenge
+page raises ``BlockedError`` (after rotating through the proxies, when set).
+
 Environment variables (all optional):
     NORDVPN_USER: NordVPN service username.
     NORDVPN_PASS: NordVPN service password.
     NORDVPN_SERVERS: Comma-separated SOCKS5 hostnames.
     PROXY_ROTATE_EVERY: Proactive rotation threshold in requests (default: 15).
+    DETAIL_CONCURRENCY: Parallel detail fetches per batch for CLI/MCP (default: 5).
+    VPN_ROTATE_EVERY_BATCHES: Rotate the proxy every N detail batches for CLI/MCP (default: 3).
+    BROWSER_HEADLESS: Set to false to show the Camoufox window (default: true).
+    BLOCK_ASSETS: Set to 1/true to skip image downloads (default: off; some
+        anti-bot systems score clients that never load images).
 """
 
 import asyncio
 import json
 import logging
 import os
+import random
 import re
 import socket
 import sys
 import time
-from typing import Any
+from typing import Any, Callable
 
 from dotenv import load_dotenv
 
@@ -28,7 +37,7 @@ load_dotenv()
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from apt_scrape.enrichment import enrich_post_dates, enrich_with_details
+from apt_scrape.enrichment import detail_page_budget, enrich_post_dates, enrich_with_details
 from apt_scrape.export import listings_to_csv, listings_to_markdown_table
 from apt_scrape.sites import (
     SearchFilters,
@@ -56,6 +65,76 @@ DEFAULT_MAX_PAGES = 1
 MAX_PAGES_LIMIT = 10
 DETAIL_CONCURRENCY = int(os.getenv("DETAIL_CONCURRENCY", "5"))
 VPN_ROTATE_EVERY_BATCHES = int(os.getenv("VPN_ROTATE_EVERY_BATCHES", "3"))
+# Backoff range (seconds) before the single retry of a transient navigation error.
+TRANSIENT_RETRY_DELAY = (3.0, 6.0)
+# DataDome's JS interstitial can clear itself; re-check a challenge page once after this.
+CHALLENGE_RECHECK_SECONDS = 2.0
+
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+
+
+class BlockedError(RuntimeError):
+    """The portal served a bot-challenge or block page instead of content.
+
+    Subclasses ``RuntimeError`` so existing ``except Exception`` handlers still
+    catch it.
+
+    Attributes:
+        url: The URL that was blocked.
+        html: The block page HTML, kept for debugging tools.
+    """
+
+    def __init__(self, url: str, reason: str = "", html: str = "") -> None:
+        self.url = url
+        self.html = html
+        msg = f"Blocked by bot protection on {url}"
+        super().__init__(f"{msg} ({reason})" if reason else msg)
+
+
+class FetchAborted(Exception):
+    """A queued ``fetch_page_parallel`` call was called off before navigating.
+
+    Raised when its ``should_abort`` check returns ``True`` after the stagger
+    and rate-limit wait (e.g. the enrichment block breaker tripped meanwhile).
+    No request was made.
+
+    Attributes:
+        url: The URL that was not fetched.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+        super().__init__(f"Fetch of {url} called off before navigating")
+
+
+def _is_connection_lost(exc: BaseException) -> bool:
+    """Return ``True`` when *exc* means the browser connection itself died."""
+    err_str = str(exc).lower()
+    return (
+        "targetclosederror" in str(type(exc)).lower()
+        or "closed=true" in err_str
+        or "handler is closed" in err_str
+    )
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Return ``True`` for navigation timeouts and network errors worth one retry.
+
+    Camoufox is Firefox, so network failures surface as ``NS_ERROR_*``;
+    ``net::ERR_*`` covers Chromium-style messages.
+    """
+    if isinstance(exc, BlockedError):
+        return False
+    msg = str(exc)
+    return (
+        type(exc).__name__ == "TimeoutError"
+        or "Timeout" in msg
+        or "net::ERR_" in msg
+        or "NS_ERROR_" in msg
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +186,8 @@ class BrowserManager:
     def __init__(self) -> None:
         self._browser = None
         self._camoufox_ctx = None
-        self._last_request_time = 0.0
+        # Earliest monotonic time the next request may start (shared rate limiter).
+        self._next_request_time = 0.0
         self._proxy_list: list[dict] = _build_proxy_list()
         self._proxy_index: int = 0
         self._context = None
@@ -147,7 +227,13 @@ class BrowserManager:
 
         headless = os.getenv("BROWSER_HEADLESS", "true").lower() not in ("0", "false", "no")
         logger.info("Camoufox headless=%s (set BROWSER_HEADLESS=false to show window)", headless)
-        self._camoufox_ctx = AsyncCamoufox(headless=headless)
+        # Only the HTML is parsed (photo URLs come from <img src>), so image bytes
+        # are optional. Opt-in because a client that never loads images can look
+        # more bot-like to DataDome.
+        block_images = os.getenv("BLOCK_ASSETS", "").lower() in ("1", "true", "yes")
+        if block_images:
+            logger.info("BLOCK_ASSETS on — image downloads disabled.")
+        self._camoufox_ctx = AsyncCamoufox(headless=headless, block_images=block_images)
         self._browser = await self._camoufox_ctx.__aenter__()
         logger.info("Camoufox browser started.")
         await self._ensure_context()
@@ -223,30 +309,53 @@ class BrowserManager:
             {"Accept-Encoding": "gzip, deflate"}
         )
 
+    # Exact (lowercased, whitespace-collapsed) titles of known block/challenge pages.
+    # Matching whole titles, never substrings: listing titles carry street numbers
+    # such as "via Emilia Levante 403".
+    _BLOCK_TITLES = frozenset({
+        "403", "403 forbidden", "403 - forbidden", "error 403", "http 403", "forbidden",
+        "access denied", "just a moment...", "just a moment", "attention required! | cloudflare",
+        "robot check", "are you a robot?", "pardon our interruption",
+    })
+
     @staticmethod
-    def _detect_block(html: str) -> bool:
+    def _detect_block(html: str, check_length: bool = True) -> bool:
         """Return ``True`` if the page looks like a bot-challenge or block page.
+
+        Signals, strongest first:
+
+        - DataDome: ``captcha-delivery.com`` together with its ``var dd={``
+          bootstrap, a captcha ``<iframe>``, or a page too small to be a real
+          listing page (a full page that merely references the domain passes).
+        - Cloudflare's challenge platform on a small page.
+        - A ``<title>`` that is exactly a known block title.
+        - An abnormally short HTML document (only when *check_length*; skip it
+          for pages checked right after navigation, before an SPA hydrates).
 
         Args:
             html: Raw HTML string to inspect.
+            check_length: Whether to treat a tiny document as a block page.
 
         Returns:
-            ``True`` when DataDome, an access-denied title, or an abnormally
-            short HTML response is detected.
+            ``True`` when the HTML is a block or challenge page.
         """
-        if "captcha-delivery.com" in html:
+        if not html:
+            return False
+        lower = html.lower()
+        if "captcha-delivery.com" in lower and (
+            re.search(r"var\s+dd\s*=\s*\{", html)
+            or re.search(r"<iframe[^>]+src=[\"'][^\"']*captcha-delivery\.com", lower)
+            or len(html) < 50_000
+        ):
             return True
-        title_match = re.search(
-            r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL
-        )
+        if "/cdn-cgi/challenge-platform" in lower and len(html) < 50_000:
+            return True
+        title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
         if title_match:
-            title = title_match.group(1).lower()
-            if any(
-                w in title
-                for w in ("access denied", "robot check", "captcha", "blocked", "just a moment", "403")
-            ):
+            title = re.sub(r"\s+", " ", title_match.group(1)).strip().lower()
+            if title in BrowserManager._BLOCK_TITLES:
                 return True
-        if len(html) < 2000 and "<html" in html.lower():
+        if check_length and len(html) < 2000 and "<html" in lower:
             return True
         return False
 
@@ -288,14 +397,25 @@ class BrowserManager:
                 "Rotated to proxy: %s", self._proxy_list[self._proxy_index]["server"]
             )
 
-    async def _rate_limit(self) -> None:
-        """Enforce the minimum delay between consecutive requests."""
+    async def _rate_limit(self, min_interval: float | None = None) -> None:
+        """Space request starts at least *min_interval* seconds apart.
+
+        Shared by ``fetch_page`` and ``fetch_page_parallel``. The lock is held
+        only to reserve the next start slot, so parallel callers wait their
+        turn without serialising the page loads themselves.
+
+        Args:
+            min_interval: Seconds between consecutive request starts. ``None``
+                uses ``REQUEST_DELAY_SECONDS``.
+        """
+        interval = REQUEST_DELAY_SECONDS if min_interval is None else max(0.0, min_interval)
         async with self._rate_limit_lock:
             now = time.monotonic()
-            elapsed = now - self._last_request_time
-            if elapsed < REQUEST_DELAY_SECONDS:
-                await asyncio.sleep(REQUEST_DELAY_SECONDS - elapsed)
-            self._last_request_time = time.monotonic()
+            start = max(now, self._next_request_time)
+            self._next_request_time = start + interval
+        delay = start - time.monotonic()
+        if delay > 0:
+            await asyncio.sleep(delay)
 
     async def fetch_page(
         self,
@@ -303,11 +423,15 @@ class BrowserManager:
         wait_selector: str | None = None,
         wait_until: str = "domcontentloaded",
         wait_selector_timeout: int = 15000,
+        *,
+        min_interval: float | None = None,
+        raise_on_block: bool = True,
     ) -> str:
         """Fetch *url* via the stealth browser and return raw HTML.
 
-        Handles proactive proxy rotation (every N requests) and reactive
-        rotation (on block detection).
+        Handles proactive proxy rotation (every N requests), block detection
+        (always, with or without proxies), reactive rotation on blocks, and one
+        retry of transient navigation errors.
 
         Args:
             url: Page URL to fetch.
@@ -315,15 +439,21 @@ class BrowserManager:
             wait_until: Playwright navigation wait event — ``"domcontentloaded"``
                 (default, fast), ``"load"``, or ``"networkidle"`` (waits for JS
                 hydration to complete; use for sites with client-decoded content).
+            wait_selector_timeout: Milliseconds to wait for *wait_selector*.
+            min_interval: Minimum seconds between request starts (default
+                ``REQUEST_DELAY_SECONDS``).
+            raise_on_block: When ``False`` (debug dumps), return the block
+                page HTML instead of raising.
 
         Returns:
             Raw HTML string of the rendered page.
 
         Raises:
-            RuntimeError: When the page is blocked even after proxy rotation.
+            BlockedError: When the page is a block page and no proxy (or no
+                remaining proxy) gets past it.
         """
         await self._ensure_browser()
-        await self._rate_limit()
+        await self._rate_limit(min_interval)
 
         if self._proxy_list and self._requests_since_rotation >= self._rotate_every:
             logger.info(
@@ -333,43 +463,12 @@ class BrowserManager:
             await self.rotate_proxy()
 
         try:
-            html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
-        except Exception as exc:
-            err_str = str(exc).lower()
-            if "targetclosederror" in str(type(exc)).lower() or "closed=true" in err_str or "handler is closed" in err_str:
-                logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
-                async with self._browser_lock:
-                    if self._browser is None or not self._browser.is_connected():
-                        await self._close_unlocked()
-                        await self._ensure_browser_unlocked()
-                html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
-            elif not self._proxy_list:
+            html = await self._fetch_resilient(url, wait_selector, wait_until, wait_selector_timeout)
+        except BlockedError as exc:
+            if raise_on_block:
                 raise
-            else:
-                logger.warning("Fetch error on %s (%s) — rotating proxy and retrying.", url, exc)
-                html = None
-
-        if self._proxy_list and (html is None or self._detect_block(html)):
-            # Cycle through ALL remaining proxies before giving up
-            for attempt in range(len(self._proxy_list)):
-                logger.warning(
-                    "Block/timeout on %s — rotating proxy (attempt %d/%d).",
-                    url, attempt + 1, len(self._proxy_list),
-                )
-                await self.rotate_proxy()
-                await asyncio.sleep(3)
-                try:
-                    html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
-                except Exception as exc:
-                    logger.warning("Fetch error after rotation (attempt %d): %s", attempt + 1, exc)
-                    html = None
-                    continue
-                if not self._detect_block(html):
-                    break
-            else:
-                logger.error("All proxies failed on %s.", url)
-                raise RuntimeError(f"Blocked on {url} even after proxy rotation.")
-
+            logger.warning("Returning block page for %s as requested.", url)
+            html = exc.html
         self._requests_since_rotation += 1
         return html
 
@@ -380,14 +479,18 @@ class BrowserManager:
         stagger_secs: float = 0.0,
         wait_until: str = "domcontentloaded",
         wait_selector_timeout: int = 15000,
+        *,
+        min_interval: float | None = None,
+        should_abort: Callable[[], bool] | None = None,
     ) -> str:
-        """Fetch *url* without the per-request rate limiter, suitable for use
-        inside ``asyncio.gather`` batches.
+        """Fetch *url* for use inside ``asyncio.gather`` batches.
 
         Stagger is applied via an up-front sleep so that slots within the same
-        batch are spread out slightly.  Reactive block-detection and proxy
-        rotation are retained; proactive per-request rotation is skipped
-        because batch-level rotation in ``enrichment`` handles it instead.
+        batch are spread out slightly; the shared rate limiter then spaces the
+        actual request starts. Block detection, reactive proxy rotation and
+        the transient-error retry are the same as ``fetch_page``; proactive
+        per-request rotation is skipped because batch-level rotation in
+        ``enrichment`` handles it instead.
 
         Args:
             url: Page URL to fetch.
@@ -398,58 +501,113 @@ class BrowserManager:
             wait_until: Playwright navigation wait event (default
                 ``"domcontentloaded"``).  Pass ``"networkidle"`` for sites that
                 require JS hydration before content is readable.
+            wait_selector_timeout: Milliseconds to wait for *wait_selector*.
+            min_interval: Minimum seconds between request starts (default
+                ``REQUEST_DELAY_SECONDS``).
+            should_abort: Checked once the slot's turn comes (after the stagger
+                and the rate-limit wait), right before navigating: ``True``
+                calls the fetch off. Slots of one batch start together, so a
+                check made before the call cannot see what the earlier slots
+                ran into while this one waited.
 
         Returns:
             Raw HTML string of the rendered page.
 
         Raises:
-            RuntimeError: When the page is blocked even after proxy rotation.
+            BlockedError: When the page is a block page and no proxy (or no
+                remaining proxy) gets past it.
+            FetchAborted: When *should_abort* returned ``True``; nothing was fetched.
         """
         if stagger_secs > 0:
             await asyncio.sleep(stagger_secs)
         await self._ensure_browser()
+        await self._rate_limit(min_interval)
+        if should_abort is not None and should_abort():
+            raise FetchAborted(url)
 
-        try:
-            html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
-        except Exception as exc:
-            err_str = str(exc).lower()
-            if "targetclosederror" in str(type(exc)).lower() or "closed=true" in err_str or "handler is closed" in err_str:
-                logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
-                async with self._browser_lock:
-                    # Re-check after acquiring lock — another coroutine may have
-                    # already reconnected while we were waiting.
-                    if self._browser is None or not self._browser.is_connected():
-                        await self._close_unlocked()
-                        await self._ensure_browser_unlocked()
-                html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
-            elif not self._proxy_list:
-                raise
-            else:
-                logger.warning("Fetch error on %s (%s) — rotating proxy and retrying.", url, exc)
-                html = None
-
-        if self._proxy_list and (html is None or self._detect_block(html)):
-            for attempt in range(len(self._proxy_list)):
-                logger.warning(
-                    "Block/timeout on %s (parallel) — rotating proxy (attempt %d/%d).",
-                    url, attempt + 1, len(self._proxy_list),
-                )
-                await self.rotate_proxy()
-                await asyncio.sleep(3)
-                try:
-                    html = await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
-                except Exception as exc:
-                    logger.warning("Fetch error after rotation (attempt %d): %s", attempt + 1, exc)
-                    html = None
-                    continue
-                if not self._detect_block(html):
-                    break
-            else:
-                logger.error("All proxies failed on %s.", url)
-                raise RuntimeError(f"Blocked on {url} even after proxy rotation.")
-
+        html = await self._fetch_resilient(url, wait_selector, wait_until, wait_selector_timeout)
         self._requests_since_rotation += 1
         return html
+
+    async def _fetch_reconnecting(
+        self,
+        url: str,
+        wait_selector: str | None,
+        wait_until: str,
+        wait_selector_timeout: int,
+    ) -> str:
+        """Run ``_fetch_once``, restarting the browser once if its connection died."""
+        try:
+            return await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
+        except Exception as exc:
+            if not _is_connection_lost(exc):
+                raise
+            logger.warning("Browser connection lost on %s: %s. Reconnecting...", url, exc)
+            async with self._browser_lock:
+                # Re-check after acquiring lock — another coroutine may have
+                # already reconnected while we were waiting.
+                if self._browser is None or not self._browser.is_connected():
+                    await self._close_unlocked()
+                    await self._ensure_browser_unlocked()
+            return await self._fetch_once(url, wait_selector, wait_until, wait_selector_timeout)
+
+    async def _fetch_resilient(
+        self,
+        url: str,
+        wait_selector: str | None,
+        wait_until: str,
+        wait_selector_timeout: int,
+    ) -> str:
+        """Fetch *url* with block detection, proxy rotation and transient retry.
+
+        - Without proxies: a block page raises ``BlockedError`` at once (the
+          same IP rarely gets through seconds later); a transient navigation
+          error (timeout, ``NS_ERROR_*``/``net::ERR_*``) is retried once after
+          a short backoff, then propagates.
+        - With proxies: any block or error rotates through every proxy, as
+          before; when they are all exhausted it raises ``BlockedError`` if a
+          block was seen, otherwise the last navigation error.
+        """
+        args = (url, wait_selector, wait_until, wait_selector_timeout)
+        blocked: BlockedError | None = None
+        last_exc: Exception | None = None
+        try:
+            return await self._fetch_reconnecting(*args)
+        except BlockedError as exc:
+            if not self._proxy_list:
+                raise
+            logger.warning("Block page on %s — rotating proxy and retrying.", url)
+            blocked = exc
+        except Exception as exc:
+            if not self._proxy_list:
+                if not _is_transient_error(exc):
+                    raise
+                logger.warning("Transient error on %s (%s) — retrying once.", url, exc)
+                await asyncio.sleep(random.uniform(*TRANSIENT_RETRY_DELAY))
+                return await self._fetch_reconnecting(*args)
+            logger.warning("Fetch error on %s (%s) — rotating proxy and retrying.", url, exc)
+            last_exc = exc
+
+        # Proxy path: cycle through ALL remaining proxies before giving up.
+        for attempt in range(len(self._proxy_list)):
+            logger.warning(
+                "Block/timeout on %s — rotating proxy (attempt %d/%d).",
+                url, attempt + 1, len(self._proxy_list),
+            )
+            await self.rotate_proxy()
+            await asyncio.sleep(3)
+            try:
+                return await self._fetch_reconnecting(*args)
+            except BlockedError as exc:
+                blocked = exc
+            except Exception as exc:
+                logger.warning("Fetch error after rotation (attempt %d): %s", attempt + 1, exc)
+                last_exc = exc
+        logger.error("All proxies failed on %s.", url)
+        if blocked is not None:
+            raise BlockedError(url, "still blocked after rotating every proxy", blocked.html)
+        assert last_exc is not None
+        raise last_exc
 
     async def _fetch_once(
         self,
@@ -460,16 +618,22 @@ class BrowserManager:
     ) -> str:
         """Open *url* in a new page and return its rendered HTML.
 
+        Checks for a bot-challenge page right after navigation, so a blocked
+        page fails in about two seconds instead of burning the selector
+        timeout.
+
         Args:
             url: URL to navigate to.
             wait_selector: CSS selector to wait for before capturing content.
             wait_until: Playwright ``page.goto`` wait event.  Use
                 ``"networkidle"`` for JS-hydrated pages (e.g. Casa.it).
+            wait_selector_timeout: Milliseconds to wait for *wait_selector*.
 
         Returns:
             Raw HTML string.
 
         Raises:
+            BlockedError: When the page is a block or challenge page.
             Exception: Propagates any Playwright navigation error.
         """
         page = await self._context.new_page()
@@ -479,10 +643,22 @@ class BrowserManager:
             goto_timeout = 45000 if wait_until == "networkidle" else 30000
             await page.goto(url, wait_until=wait_until, timeout=goto_timeout)
 
+            # Fail fast on a challenge page. No length check yet: an SPA shell
+            # can be tiny before it hydrates.
+            if self._detect_block(await self._content_or_empty(page), check_length=False):
+                await asyncio.sleep(CHALLENGE_RECHECK_SECONDS)
+                html = await self._content_or_empty(page)
+                if self._detect_block(html, check_length=False):
+                    logger.warning("Bot challenge on %s — giving up on this page.", url)
+                    raise BlockedError(url, html=html)
+
             if wait_selector:
                 try:
                     await page.wait_for_selector(wait_selector, timeout=wait_selector_timeout)
                 except Exception as exc:
+                    html = await self._content_or_empty(page)
+                    if self._detect_block(html, check_length=False):
+                        raise BlockedError(url, "challenge appeared while waiting", html) from exc
                     logger.warning(
                         "Selector '%s' not found, using page as-is: %s",
                         wait_selector,
@@ -496,14 +672,30 @@ class BrowserManager:
                         logger.warning("DIAG html snippet: %s", html_snippet)
                     except Exception as diag_exc:
                         logger.warning("DIAG failed to capture snippet: %s", diag_exc)
+            else:
+                # Nothing to wait for: give late scripts a moment to render.
+                await asyncio.sleep(1.5)
 
-            await asyncio.sleep(1.5)
-            return await page.content()
+            html = await page.content()
+            if self._detect_block(html):
+                raise BlockedError(url, html=html)
+            return html
+        except BlockedError:
+            raise
         except Exception as exc:
             logger.error("Error fetching %s: %s", url, exc)
             raise
         finally:
             await page.close()
+
+    @staticmethod
+    async def _content_or_empty(page) -> str:
+        """Return ``page.content()``, or ``""`` while the page is mid-navigation."""
+        try:
+            return await page.content()
+        except Exception as exc:
+            logger.debug("page.content() failed (page navigating?): %s", exc)
+            return ""
 
     async def _close_unlocked(self) -> None:
         """Shut down relay, context, and browser. Caller must hold ``_browser_lock``."""
@@ -755,6 +947,7 @@ async def search_listings(params: SearchListingsInput) -> str:
     """
     adapter = get_adapter(params.source)
     all_listings: list[dict[str, Any]] = []
+    warnings: list[str] = []
     pages_scraped = 0
 
     if params.end_page is not None:
@@ -803,12 +996,20 @@ async def search_listings(params: SearchListingsInput) -> str:
 
         try:
             html = await browser.fetch_page(
-                url, wait_selector=adapter.config.search_wait_selector
+                url,
+                wait_selector=adapter.config.search_wait_selector,
+                wait_until=adapter.config.page_load_wait,
+                wait_selector_timeout=adapter.config.search_wait_timeout,
             )
         except Exception as exc:
-            return _json({"error": f"Failed to fetch page {page_num}: {exc}", "url": url})
+            if not all_listings:
+                return _json({"error": f"Failed to fetch page {page_num}: {exc}", "url": url})
+            # Keep the pages already collected instead of discarding them.
+            logger.warning("Page %d failed (%s); keeping %d listings.", page_num, exc, len(all_listings))
+            warnings.append(f"Stopped at page {page_num}: {exc}")
+            break
 
-        page_listings = adapter.parse_search(html)
+        page_listings = await asyncio.to_thread(adapter.parse_search, html)
         pages_scraped = page_num
 
         if not page_listings:
@@ -846,11 +1047,19 @@ async def search_listings(params: SearchListingsInput) -> str:
             rotate_every_batches=params.vpn_rotate_batches,
         )
 
-    post_date_enriched, post_date_errors = await enrich_post_dates(
-        all_listings, browser, adapter,
-        concurrency=params.detail_concurrency,
-        rotate_every_batches=params.vpn_rotate_batches,
-    )
+    # The post-date pass skips listings the details pass already handled, and
+    # detail_limit caps the detail-page fetches of both passes together.
+    post_date_limit = detail_page_budget(all_listings, params.detail_limit)
+    if post_date_limit != 0:
+        post_date_enriched, post_date_errors = await enrich_post_dates(
+            all_listings, browser, adapter,
+            concurrency=params.detail_concurrency,
+            rotate_every_batches=params.vpn_rotate_batches,
+            limit=post_date_limit,
+        )
+    blocked = sum(1 for e in detail_errors + post_date_errors if e.get("kind") == "blocked")
+    if blocked:
+        warnings.append(f"{blocked} detail page(s) were blocked by bot protection (captcha).")
 
     return _json(
         {
@@ -867,6 +1076,7 @@ async def search_listings(params: SearchListingsInput) -> str:
             "detail_errors": detail_errors,
             "post_date_enriched": post_date_enriched,
             "post_date_errors": post_date_errors,
+            "warnings": warnings,
             "csv": listings_to_csv(all_listings) if params.include_csv else "",
             "table": listings_to_markdown_table(all_listings, params.table_max_rows)
             if params.include_table
@@ -910,12 +1120,14 @@ async def get_listing_detail(params: GetListingDetailInput) -> str:
 
     try:
         html = await browser.fetch_page(
-            url, wait_selector=adapter.config.detail_wait_selector
+            url,
+            wait_selector=adapter.config.detail_wait_selector,
+            wait_until=adapter.config.page_load_wait,
         )
     except Exception as exc:
         return _json({"error": f"Failed to fetch listing: {exc}", "url": url})
 
-    detail = adapter.parse_detail(html, url)
+    detail = await asyncio.to_thread(adapter.parse_detail, html, url)
     return _json(detail.to_dict())
 
 
@@ -960,7 +1172,10 @@ async def dump_page(params: DumpPageInput) -> str:
         Raw HTML string (not JSON).
     """
     try:
-        return await browser.fetch_page(params.url, wait_selector=params.wait_selector)
+        # A debug dump should show a block page rather than hide it behind an error.
+        return await browser.fetch_page(
+            params.url, wait_selector=params.wait_selector, raise_on_block=False
+        )
     except Exception as exc:
         return _json({"error": str(exc), "url": params.url})
 

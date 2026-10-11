@@ -69,11 +69,14 @@ def render(jobs):
                     )
                     st.caption(f"Started: {str(job.get('started_at', '—'))[:19]}")
                 with c2:
+                    # No delete here: the API refuses to delete a run in progress (409)
                     st.caption(f"Triggered by: {job.get('triggered_by', '—')}")
-                    if st.button("Cancel & Delete", key=f"del_run_{job['id']}", use_container_width=True):
-                        api.delete(f"/jobs/{job['id']}")
-                        st.rerun()
-                log_lines = (job.get("log") or "").strip().split("\n")
+                # GET /jobs omits logs; the single-job endpoint has the full one
+                try:
+                    log = api.get(f"/jobs/{job['id']}").get("log") or ""
+                except Exception:
+                    log = ""
+                log_lines = log.strip().split("\n")
                 st.code("\n".join(log_lines[-10:]), language=None)
     else:
         st.info("No jobs currently running.")
@@ -100,12 +103,13 @@ def render(jobs):
                 with c_notion:
                     if job["status"] == "done" and st.button("Push to Notion", key=f"notion_{job['id']}", use_container_width=True):
                         try:
+                            # run = found first by this job or last seen by it (job_id alone is first found only)
                             job_listings = api.get(
                                 "/listings",
-                                params={"job_id": job["id"], "limit": 1000},
+                                params={"run": job["id"], "limit": 1000},
                             )
                             if not job_listings:
-                                st.warning("No listings found for this job.")
+                                st.warning("No listings seen by this job.")
                             else:
                                 listing_ids = [l["id"] for l in job_listings]
                                 result = api.post(

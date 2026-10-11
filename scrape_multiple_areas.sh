@@ -7,7 +7,7 @@ PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python"
 OUTPUT_DIR="results/latest/batch2"
 
 # Search parameters
-CITY="milano"
+CITY="bologna"
 OPERATION="affitto"
 PROPERTY_TYPES="appartamenti,attici"
 MIN_PRICE=700
@@ -23,19 +23,11 @@ VPN_ROTATE_BATCHES=3   # rotate VPN every N batches
 
 # List of areas to scrape (add or remove as needed)
 AREAS=(
-  # "bicocca"
-  # "niguarda"
-  # "precotto"
-  # "loreto"  # defunct on immobiliare.it — redirects to porta-venezia-indipendenza
-  # "porta-venezia-indipendenza"
-
-  "citta-studi"
-  # "lambrate"
-  # "turro"
-  # "greco-segnano"
-  # "crescenzago"
-  "centrale"
-#   "pasteur-rovereto"
+  "san-donato-pilastro"
+  "san-vitale-mazzini"
+  "murri-massarenti"
+  "toscana-savena"
+  "zona-colli"
 )
 
 # Create output directory if it doesn't exist

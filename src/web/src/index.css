@@ -1,0 +1,454 @@
+@import "tailwindcss";
+@import "@fontsource/titillium-web/400.css";
+@import "@fontsource/titillium-web/600.css";
+@import "@fontsource/titillium-web/700.css";
+@import "leaflet/dist/leaflet.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── World: the APE certificate ────────────────────────────────────────────
+   Ink on white sheets over a cool paper ground. Colour comes only from the
+   ten-rung energy ladder (A4 → G) and always carries a score, an energy
+   class or a run state. Selection is the black pointer arrow. */
+:root {
+  --paper: #e9ebe6;
+  --sheet: #ffffff;
+  --sheet-2: #f5f6f3;
+  --ink: #1d1d1b;
+  --ink-2: #474843;
+  --ink-3: #686a64;
+  --hair: #d6d8d2;
+  --hair-strong: #b9bcb4;
+
+  --rail: #1d1d1b;
+  --rail-ink: #f3f3ef;
+  --rail-muted: #a5a79f;
+  --rail-hover: #2c2c29;
+
+  /* Ladder, best to worst. Labels on A1–D are ink, the rest white. */
+  --r-0: #00703c;
+  --r-1: #138036;
+  --r-2: #4aa63a;
+  --r-3: #8dc63f;
+  --r-4: #c9da2b;
+  --r-5: #ffe01b;
+  --r-6: #fbb315;
+  --r-7: #f28c1e;
+  --r-8: #e5561f;
+  --r-9: #cf1b22;
+
+  --nd: #9a9c95;
+
+  /* Milhouse: the AI's voice. This blue appears only where Milhouse speaks or works. */
+  --mh: #9cbcf0;
+  --mh-lens: #eef4ff;
+  --mh-ink: #24406e;
+
+  --radius: 0.1875rem;
+
+  /* shadcn contract */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--sheet);
+  --card-foreground: var(--ink);
+  --popover: var(--sheet);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: #ffffff;
+  --secondary: var(--sheet-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--sheet-2);
+  --muted-foreground: var(--ink-3);
+  --accent: #eceee8;
+  --accent-foreground: var(--ink);
+  --destructive: #b8161d;
+  --border: var(--hair);
+  --input: var(--hair-strong);
+  --ring: var(--ink);
+}
+
+@theme inline {
+  --font-sans: "Titillium Web", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.05rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.2rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.45rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.5rem;
+
+  --color-paper: var(--paper);
+  --color-sheet: var(--sheet);
+  --color-sheet-2: var(--sheet-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-hair: var(--hair);
+  --color-hair-strong: var(--hair-strong);
+  --color-rail: var(--rail);
+  --color-rail-ink: var(--rail-ink);
+  --color-rail-muted: var(--rail-muted);
+  --color-rail-hover: var(--rail-hover);
+  --color-nd: var(--nd);
+  --color-mh: var(--mh);
+  --color-mh-lens: var(--mh-lens);
+  --color-mh-ink: var(--mh-ink);
+  --color-r-0: var(--r-0);
+  --color-r-1: var(--r-1);
+  --color-r-2: var(--r-2);
+  --color-r-3: var(--r-3);
+  --color-r-4: var(--r-4);
+  --color-r-5: var(--r-5);
+  --color-r-6: var(--r-6);
+  --color-r-7: var(--r-7);
+  --color-r-8: var(--r-8);
+  --color-r-9: var(--r-9);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 1px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 1px);
+  --radius-xl: calc(var(--radius) + 3px);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    color-scheme: light;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-base antialiased;
+    font-feature-settings: "kern";
+  }
+  /* Selecting text is an act of selection, so it is ink (a tint of it), never a ladder rung. */
+  ::selection {
+    background: color-mix(in srgb, var(--ink) 18%, var(--sheet));
+    color: var(--ink);
+  }
+  /* Keyboard hints are labels, set in the one face; monospace is for run logs and inline code. */
+  kbd {
+    font-family: var(--font-sans);
+  }
+  /* The browser's own clear button on search fields is blue: fields that need one draw it in ink. */
+  input[type="search"]::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  a {
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+  input,
+  textarea {
+    caret-color: var(--ink);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--hair-strong) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--hair-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 10px;
+  }
+}
+
+@layer utilities {
+  .tnum {
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+  /* Chevron: a bar ending in an arrow tip, the label's shape. */
+  .chevron {
+    clip-path: polygon(0 0, calc(100% - var(--tip, 0.5em)) 0, 100% 50%, calc(100% - var(--tip, 0.5em)) 100%, 0 100%);
+  }
+  .chevron-left {
+    clip-path: polygon(var(--tip, 0.5em) 0, 100% 0, 100% 100%, var(--tip, 0.5em) 100%, 0 50%);
+  }
+  /* Not evaluated: grey diagonal hatching, never a colour from the ladder. */
+  .hatch {
+    background-color: #eceee9;
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent 0 3px,
+      color-mix(in srgb, var(--nd) 55%, transparent) 3px 4px
+    );
+  }
+  .rule-b {
+    border-bottom: 1px solid var(--hair);
+  }
+  .label-caps {
+    font-size: var(--text-2xs);
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+}
+
+/* AI answers rendered from Markdown */
+.md > * + * {
+  margin-top: 0.6em;
+}
+.md ul,
+.md ol {
+  padding-left: 1.15em;
+}
+.md ul {
+  list-style: square;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li + li {
+  margin-top: 0.25em;
+}
+.md li::marker {
+  color: var(--ink-3);
+}
+.md strong {
+  font-weight: 700;
+  color: var(--ink);
+}
+.md a {
+  text-decoration: underline;
+}
+.md h1,
+.md h2,
+.md h3 {
+  font-weight: 700;
+  font-size: 1em;
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--sheet-2);
+  padding: 0 0.25em;
+  border-radius: 2px;
+}
+
+/* Leaflet, re-inked. The base map goes grey so only the ladder carries colour. */
+.map-tiles {
+  filter: grayscale(1) contrast(0.92) brightness(1.04);
+}
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: var(--sheet-2);
+}
+.leaflet-popup-content-wrapper {
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px -6px rgb(29 29 27 / 0.28), 0 1px 2px rgb(29 29 27 / 0.12);
+  padding: 0;
+}
+.leaflet-popup-content {
+  margin: 0;
+  width: 260px !important;
+}
+.leaflet-container a.leaflet-popup-close-button {
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  border-radius: 2px;
+  background: var(--sheet);
+  color: var(--ink);
+  font: 600 18px/22px var(--font-sans);
+}
+.leaflet-popup-tip {
+  box-shadow: none;
+}
+.leaflet-control-zoom a {
+  color: var(--ink) !important;
+  border-radius: 0 !important;
+}
+.leaflet-bar {
+  border: 1px solid var(--hair-strong) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: none !important;
+}
+
+/* Milhouse pushes his glasses up, a glint crosses the lenses. */
+@keyframes mh-push {
+  0%, 72%, 100% { transform: translateY(0) rotate(0); }
+  78% { transform: translateY(-3px) rotate(-2deg); }
+  86% { transform: translateY(-1px) rotate(1deg); }
+}
+@keyframes mh-glint {
+  0%, 55% { transform: translateX(0) rotate(24deg); }
+  85%, 100% { transform: translateX(110px) rotate(24deg); }
+}
+@keyframes mh-line {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.mh-push {
+  animation: mh-push 2.2s var(--ease-out-expo) infinite;
+  transform-origin: 50% 60%;
+}
+.mh-glint {
+  animation: mh-glint 2.2s ease-in-out infinite;
+}
+.mh-line {
+  animation: mh-line 0.35s var(--ease-out-expo) both;
+}
+/* "Ci pensa su…": the label breathes while Milhouse reasons. */
+@keyframes mh-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.mh-shimmer {
+  animation: mh-breathe 1.6s ease-in-out infinite;
+}
+/* Streaming caret at the end of the answer, in Milhouse blue. */
+@keyframes mh-caret {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.md-streaming > p:last-child::after,
+.md-streaming > ul:last-child > li:last-child::after,
+.md-streaming > ol:last-child > li:last-child::after,
+.md-streaming > h3:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--mh-ink);
+  animation: mh-caret 1s steps(1) infinite;
+}
+
+/* ── The certificate prints ─────────────────────────────────────────────── */
+/* Each rung wipes on from its left edge, best to worst, like a label leaving the printer. */
+@keyframes ape-print {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+.ape-print {
+  animation: ape-print 300ms var(--ease-out-expo) backwards;
+}
+/* The dotted leader draws from the pointer back to its bar once the pointer lands. */
+@keyframes ape-leader {
+  from { clip-path: inset(0 0 0 100%); }
+  to { clip-path: inset(0 0 0 0); }
+}
+.ape-leader {
+  animation: ape-leader 200ms var(--ease-out-expo) backwards;
+}
+
+/* ── Rubber stamps ────────────────────────────────────────────────────────── */
+/* A triage stamp lands like an office stamp: a touch too big and askew, then pressed flat. */
+@keyframes stamp-in {
+  0% { opacity: 0; transform: scale(1.7) rotate(-6deg); }
+  55% { opacity: 1; transform: scale(0.94) rotate(1deg); }
+  100% { opacity: 1; transform: none; }
+}
+.stamp-in {
+  animation: stamp-in 280ms var(--ease-out-expo) backwards;
+  transform-origin: 50% 60%;
+}
+@keyframes icon-pop {
+  0% { transform: scale(0.6); }
+  60% { transform: scale(1.25); }
+  100% { transform: none; }
+}
+.icon-pop {
+  animation: icon-pop 240ms var(--ease-out-expo) backwards;
+}
+/* Scartato: the rule is drawn through the title; nothing disappears. */
+.strike {
+  background: linear-gradient(var(--ink-3), var(--ink-3)) no-repeat 0 58% / 0 1px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background-size 340ms var(--ease-out-expo);
+}
+.strike.is-struck {
+  background-size: 100% 1px;
+}
+
+/* ── Arrivals ─────────────────────────────────────────────────────────────── */
+/* New run-log lines settle in under the previous ones. */
+@keyframes log-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.log-in {
+  animation: log-in 220ms var(--ease-out-expo) backwards;
+}
+/* Portal photos develop instead of popping in line by line. */
+.img-develop {
+  transition: opacity 260ms ease-out, filter 420ms var(--ease-out-expo);
+}
+.img-develop[data-loaded="false"] {
+  opacity: 0;
+  filter: grayscale(1) contrast(0.9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  /* Fewer, gentler: state still changes visibly, as a short fade, without travel. */
+  .transition-colors,
+  .transition-opacity,
+  .img-develop,
+  .strike {
+    transition-duration: 120ms !important;
+  }
+  .stamp-in,
+  .log-in {
+    animation: rm-fade 160ms ease-out both !important;
+  }
+}
+@keyframes rm-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
